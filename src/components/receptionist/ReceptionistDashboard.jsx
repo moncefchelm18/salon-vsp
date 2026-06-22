@@ -1,214 +1,318 @@
-"use client";
-
-import { useState } from "react";
-import { mockBarbers, mockTickets, mockServices } from "../../lib/mockData";
+import { useState, useEffect } from "react";
 import {
   Users,
   Clock,
-  CheckCircle,
   DollarSign,
   Plus,
   CreditCard,
-  X,
+  RefreshCcw,
+  Ban,
+  Activity,
+  Target,
 } from "lucide-react";
+import { toast } from "react-hot-toast";
+import api from "../../utils/api";
+
+// Imports from the common folder
+import StatCard from "../common/StatCard";
+import StatusBadge from "../common/StatusBadge";
+import DataTable from "../common/DataTable";
+import Modal from "../common/Modal";
+import Button from "../common/Button";
+import Input from "../common/Input";
 
 export default function ReceptionistDashboard() {
-  const [tickets, setTickets] = useState(mockTickets);
+  const [liveTickets, setLiveTickets] = useState([]);
+  const [historyTickets, setHistoryTickets] = useState([]);
+  const [barbers, setBarbers] = useState([]);
+
+  // New Analytics State specifically for the Dashboard
+  const [dailyStats, setDailyStats] = useState({
+    summary: { totalRevenue: 0, totalServicesSold: 0 },
+    charts: { serviceDistributionData: [] },
+  });
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [selectedBarber, setSelectedBarber] = useState("");
   const [clientName, setClientName] = useState("");
 
-  // --- PAYMENT MODAL STATE ---
   const [showPayModal, setShowPayModal] = useState(false);
   const [ticketToPay, setTicketToPay] = useState(null);
-  const [priceToPay, setPriceToPay] = useState(0);
 
-  // --- CALCULATE REVENUE ---
-  const totalRevenueToday = tickets
-    .filter((ticket) => ticket.status === "completed")
-    .reduce((total, ticket) => {
-      const service = mockServices.find((s) => s.name === ticket.service);
-      return total + (service ? service.price : 0);
-    }, 0);
-
-  // --- HANDLERS ---
-  const handleCreateTicket = () => {
-    if (!selectedBarber) {
-      alert("Please select a barber.");
-      return;
+  // --- 1. DATA FETCHING & POLLING ---
+  const loadData = async () => {
+    try {
+      const [barbersRes, liveRes, historyRes, statsRes] = await Promise.all([
+        api.get("/barbers"),
+        api.get("/tickets/live"),
+        api.get("/tickets/history"),
+        api.get("/reports/dashboard?period=today"), // NEW: Pull daily analytics
+      ]);
+      setBarbers(barbersRes.data);
+      setLiveTickets(liveRes.data);
+      setHistoryTickets(historyRes.data);
+      setDailyStats(statsRes.data);
+    } catch (error) {
+      console.error("Erreur de synchronisation:", error);
+    } finally {
+      setIsLoading(false);
     }
-
-    const newTicket = {
-      id: tickets.length > 0 ? Math.max(...tickets.map((t) => t.id)) + 1 : 101,
-      clientName: clientName || "Walk-in Client",
-      service: "", // Set by barber later
-      barber:
-        mockBarbers.find((b) => b.id === Number.parseInt(selectedBarber))
-          ?.name || "",
-      status: "waiting",
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
-
-    setTickets([...tickets, newTicket]);
-    setClientName("");
-    setSelectedBarber("");
   };
 
-  // Open modal and calculate price
-  const handleOpenPayModal = (ticket) => {
-    const service = mockServices.find((s) => s.name === ticket.service);
-    // In a real app, you'd also add product prices here
-    const total = service ? service.price : 0;
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 5000); // Auto-refresh every 5s
+    return () => clearInterval(interval);
+  }, []);
 
+  // --- 2. DERIVED STATS & LOGIC ---
+  const totalRevenueToday = dailyStats.summary.totalRevenue;
+  const pendingPaymentsCount = liveTickets.filter(
+    (t) => t.status === "ready-to-pay",
+  ).length;
+  const waitingOrInServiceCount = liveTickets.filter((t) =>
+    ["waiting", "in-progress"].includes(t.status),
+  ).length;
+
+  // Daily Goal Logic (Example Goal: DZD1000/day)
+  const DAILY_GOAL = 1000;
+  const goalPercentage = Math.min((totalRevenueToday / DAILY_GOAL) * 100, 100);
+
+  // Top 3 Services today
+  const topServices = [...dailyStats.charts.serviceDistributionData]
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 3);
+
+  // --- 3. HANDLERS ---
+  const handleCreateTicket = async () => {
+    if (!selectedBarber) return toast.error("Veuillez assigner un barbier.");
+
+    setIsSubmitting(true);
+    try {
+      await api.post("/tickets", {
+        clientName: clientName || "Client Standard",
+        barberId: Number(selectedBarber),
+      });
+      toast.success("Ticket imprimé et ajouté à la file !");
+      setClientName("");
+      setSelectedBarber("");
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Erreur de création");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelTicket = async (id, name) => {
+    if (window.confirm(`Voulez-vous vraiment annuler le ticket de ${name} ?`)) {
+      try {
+        await api.delete(`/tickets/${id}`);
+        toast.success("Ticket annulé avec succès.");
+        loadData();
+      } catch (err) {
+        toast.error("Erreur lors de l'annulation.");
+      }
+    }
+  };
+
+  const handleOpenPayModal = (ticket) => {
     setTicketToPay(ticket);
-    setPriceToPay(total);
     setShowPayModal(true);
   };
 
-  // Confirm payment and update status
-  const handleConfirmPayment = () => {
+  const handleConfirmPayment = async () => {
     if (!ticketToPay) return;
-
-    const updatedTickets = tickets.map((t) =>
-      t.id === ticketToPay.id ? { ...t, status: "completed" } : t
-    );
-
-    setTickets(updatedTickets);
-    setShowPayModal(false);
-    setTicketToPay(null);
-    setPriceToPay(0);
-  };
-
-  // --- UI HELPERS ---
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-900/50 text-green-400 border border-green-800";
-      case "in-progress":
-        return "bg-blue-900/50 text-blue-400 border border-blue-800";
-      case "waiting":
-        return "bg-slate-700 text-slate-300 border border-slate-600";
-      case "ready-to-pay":
-        return "bg-amber-900/50 text-amber-400 border border-amber-800 animate-pulse";
-      default:
-        return "bg-slate-700 text-slate-300";
+    setIsSubmitting(true);
+    try {
+      await api.patch(`/tickets/${ticketToPay.id}/pay`);
+      toast.success(
+        `Paiement de DZD ${ticketToPay.price.toFixed(2)} encaissé !`,
+      );
+      setShowPayModal(false);
+      setTicketToPay(null);
+      loadData();
+    } catch (error) {
+      toast.error("Échec du paiement.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const stats = [
-    {
-      label: "Total Barbers",
-      value: mockBarbers.length,
-      icon: Users,
-      color: "text-yellow-400",
-    },
-    {
-      label: "Waiting/In-Service",
-      value: tickets.filter((t) =>
-        ["waiting", "in-progress"].includes(t.status)
-      ).length,
-      icon: Clock,
-      color: "text-yellow-400",
-    },
-    {
-      label: "Pending Payments",
-      value: tickets.filter((t) => t.status === "ready-to-pay").length,
-      icon: CreditCard,
-      color: "text-amber-400 border-amber-400",
-    },
-    {
-      label: "Today's Revenue",
-      value: `$${totalRevenueToday.toFixed(2)}`,
-      icon: DollarSign,
-      color: "text-green-400",
-    },
-    // Add a stat for pending payments
-  ];
-
   return (
-    <div className="space-y-8 relative">
-      {/* Stats Grid - Updated to 4 columns */}
+    <div className="space-y-6 relative">
+      {/* --- 1. TOP METRICS ROW --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className={`bg-slate-900 border ${
-              stat.label === "Pending Payments" && stat.value > 0
-                ? "border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
-                : "border-slate-800"
-            } p-6  transition-all`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm font-medium">
-                  {stat.label}
-                </p>
-                <p
-                  className={`text-3xl font-bold mt-2 ${
-                    stat.label === "Pending Payments" && stat.value > 0
-                      ? "text-amber-400"
-                      : "text-slate-100"
-                  }`}
-                >
-                  {stat.value}
-                </p>
-              </div>
-              <stat.icon className={`w-8 h-8 ${stat.color}`} />
-            </div>
-          </div>
-        ))}
+        <StatCard
+          label="Recette du Jour"
+          value={`DZD ${totalRevenueToday.toFixed(2)}`}
+          icon={DollarSign}
+          colorClass="text-green-500"
+          highlight={true}
+        />
+        <StatCard
+          label="En Attente / Fauteuil"
+          value={waitingOrInServiceCount}
+          icon={Clock}
+          colorClass="text-amber-500"
+        />
+        <StatCard
+          label="Encaiss. en Attente"
+          value={pendingPaymentsCount}
+          icon={CreditCard}
+          colorClass={
+            pendingPaymentsCount > 0 ? "text-amber-500" : "text-slate-500"
+          }
+          highlight={pendingPaymentsCount > 0}
+        />
+        <StatCard
+          label="Effectif Actif"
+          value={barbers.length}
+          icon={Users}
+          colorClass="text-slate-100"
+        />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Barber Status Grid */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 ">
-          <h2 className="text-xl font-serif font-bold text-amber-400 mb-4">
-            Barber Status
-          </h2>
-          {/* The main changes are in this div's class */}
-          <div className="grid grid-cols-3 gap-4 max-h-[300px] overflow-y-auto pr-2">
-            {mockBarbers.map((barber) => {
-              const activeTicket = tickets.find(
-                (t) => t.barber === barber.name && t.status === "in-progress"
-              );
-              const isBusy = !!activeTicket;
+      {/* --- 2. NEW: PERFORMANCE TRACKER ROW --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Goal Tracker */}
+        <div className="bg-slate-900 border border-slate-800 p-6 flex flex-col justify-center">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xs uppercase font-bold tracking-widest text-slate-400 flex items-center gap-2">
+              <Target size={14} /> Objectif Journalier
+            </h3>
+            <span className="text-xs font-mono text-slate-500">
+              DZD {DAILY_GOAL}
+            </span>
+          </div>
+          <div className="flex items-end gap-2 mb-2">
+            <span className="text-3xl font-bold font-mono text-slate-100">
+              {goalPercentage.toFixed(0)}%
+            </span>
+            <span className="text-xs text-slate-500 mb-1 uppercase tracking-widest">
+              Atteint
+            </span>
+          </div>
+          <div className="w-full bg-slate-950 h-3 border border-slate-800 relative overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-1000 ease-out"
+              style={{ width: `${goalPercentage}%` }}
+            ></div>
+          </div>
+        </div>
 
+        {/* Top Services */}
+        <div className="bg-slate-900 border border-slate-800 p-6">
+          <h3 className="text-xs uppercase font-bold tracking-widest text-slate-400 flex items-center gap-2 mb-4 border-b border-slate-800 pb-2">
+            <Activity size={14} /> Top Prestations (Aujourd'hui)
+          </h3>
+          <div className="space-y-3">
+            {topServices.length > 0 ? (
+              topServices.map((srv, idx) => (
+                <div key={idx} className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-200 uppercase truncate pr-4">
+                    {srv.name}
+                  </span>
+                  <span className="text-xs font-mono bg-slate-950 border border-slate-800 px-2 py-1 text-amber-500">
+                    {srv.amount}x
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-slate-600 italic">Aucune donnée</p>
+            )}
+          </div>
+        </div>
+
+        {/* Recent Activity Feed */}
+        <div className="bg-slate-900 border border-slate-800 p-6 flex flex-col">
+          <h3 className="text-xs uppercase font-bold tracking-widest text-slate-400 mb-4 border-b border-slate-800 pb-2">
+            Activité Récente
+          </h3>
+          <div className="flex-1 overflow-hidden">
+            <div className="space-y-3">
+              {historyTickets.slice(0, 3).map((ticket) => (
+                <div
+                  key={ticket.id}
+                  className="flex justify-between items-start"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-green-500 uppercase">
+                      Encaissé
+                    </p>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest">
+                      {ticket.clientName} • {ticket.barber}
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-slate-300">
+                    +DZD {ticket.price.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              {historyTickets.length === 0 && (
+                <p className="text-xs text-slate-600 italic">
+                  Aucune transaction
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* --- 3. MAIN WORKSPACE (WIDGETS & FORMS) --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* BARBER STATUS WIDGET */}
+        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-6 relative min-h-[300px]">
+          {isLoading && (
+            <div className="absolute inset-0 bg-slate-950/50 flex justify-center items-center z-10 backdrop-blur-[1px]">
+              <RefreshCcw className="w-8 h-8 text-amber-500 animate-spin" />
+            </div>
+          )}
+          <h2 className="text-lg font-serif font-bold text-amber-400 mb-6 uppercase tracking-widest">
+            Statut des Postes
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[300px] overflow-y-auto pr-2">
+            {barbers.length === 0 && !isLoading && (
+              <p className="col-span-full text-slate-500 text-xs font-bold uppercase tracking-widest text-center mt-10">
+                Aucun barbier actif
+              </p>
+            )}
+            {barbers.map((barber) => {
+              const isBusy = !!liveTickets.find(
+                (t) => t.barberId === barber.id && t.status === "in-progress",
+              );
               return (
-                // The classes on this div are changed for a vertical layout
                 <div
                   key={barber.id}
-                  className={`flex flex-col items-center text-center gap-2 p-4  border transition-colors ${
+                  className={`flex flex-col items-center text-center gap-3 p-4 border transition-colors ${
                     isBusy
-                      ? "bg-slate-800/30 border-slate-700"
-                      : "bg-slate-800/80 border-slate-600"
+                      ? "bg-slate-800/40 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+                      : "bg-slate-950 border-slate-800"
                   }`}
                 >
-                  <div className="relative">
+                  <div className="relative ">
                     <img
-                      src={barber.image}
+                      src={
+                        barber.image ||
+                        `https://ui-avatars.com/api/?name=${barber.name}&background=D4AF37&color=1E1E1E&rounded=false&size=150&bold=true`
+                      }
                       alt={barber.name}
-                      // Increased image size for better visual appeal
-                      className="w-20 h-20 rounded-full object-cover border-4 border-slate-600"
+                      className={`w-20 h-20 object-cover rounded-full  transition-all ${isBusy ? "border-amber-500" : "border-slate-700 grayscale"}`}
                     />
                     <div
-                      className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-2 border-slate-800 ${
-                        isBusy ? "bg-orange-500" : "bg-green-500"
+                      className={`absolute bottom-1 -right-0 px-2 py-2 rounded-full  border border-slate-900 text-[10px] font-bold uppercase tracking-widest ${
+                        isBusy
+                          ? "bg-orange-500 text-black"
+                          : "bg-green-500 text-black"
                       }`}
                     ></div>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-bold text-slate-100">
+                  <div className="flex-1 mt-2">
+                    <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
                       {barber.name}
                     </h3>
-                    {isBusy ? (
-                      <p className="text-xs text-orange-300">Serving</p>
-                    ) : (
-                      <p className="text-xs font-semibold text-green-400">
-                        Available
-                      </p>
-                    )}
                   </div>
                 </div>
               );
@@ -216,187 +320,199 @@ export default function ReceptionistDashboard() {
           </div>
         </div>
 
-        {/* Quick Ticket Form */}
-        <div className="bg-slate-900 border border-slate-800 p-6  h-fit">
-          <h2 className="text-xl font-serif font-bold text-amber-400 mb-4">
-            Quick Add (Walk-in)
+        {/* QUICK ADD FORM */}
+        <div className="bg-slate-900 border border-slate-800 p-6 h-fit relative">
+          {isSubmitting && (
+            <div className="absolute inset-0 bg-slate-950/50 flex justify-center items-center z-10">
+              <RefreshCcw className="w-6 h-6 text-amber-500 animate-spin" />
+            </div>
+          )}
+          <h2 className="text-lg font-serif font-bold text-amber-400 mb-6 uppercase tracking-widest">
+            Ajout Rapide
           </h2>
           <div className="space-y-4">
-            <input
-              placeholder="Client Name (Optional)"
+            <Input
+              placeholder="Nom du client (Optionnel)"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100  px-3 py-3 focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-500"
             />
             <select
               value={selectedBarber}
               onChange={(e) => setSelectedBarber(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 
-               px-3 py-3 focus:border-amber-500 focus:outline-none transition-colors appearance-none"
+              className="w-full bg-slate-950 border border-slate-700 text-slate-100 px-4 py-3 focus:border-amber-500 focus:outline-none transition-colors appearance-none rounded-none text-xs font-bold uppercase tracking-wider"
             >
-              <option value="" className="text-slate-500">
-                Assign Barber *
+              <option value="" className="text-slate-600">
+                -- Assigner un Barbier --
               </option>
-              {mockBarbers.map((b) => (
+              {barbers.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  {b.name} (Poste {b.poste || "?"})
                 </option>
               ))}
             </select>
-            <button
+            <Button
+              variant="primary"
+              fullWidth
               onClick={handleCreateTicket}
-              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-4 py-3 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-2 shadow-[0_0_10px_rgba(212,175,55,0.2)]"
+              className="py-4 mt-4 shadow-lg shadow-amber-500/20"
             >
-              <Plus className="w-5 h-5" />
-              Print Ticket to Queue
-            </button>
+              <Plus className="w-5 h-5 mr-2" /> Imprimer Ticket
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Today's Tickets Table with Actions */}
-      <div className="bg-slate-900 border border-slate-800  overflow-hidden">
-        <div className="p-6 border-b border-slate-800 bg-slate-800/50">
-          <h2 className="text-xl font-serif font-bold text-amber-400">
-            Live Flow
-          </h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-800/80">
-              <tr>
-                <th className="px-6 py-4">#</th>
-                <th className="px-6 py-4">Client</th>
-                <th className="px-6 py-4">Service Performed</th>
-                <th className="px-6 py-4">Barber</th>
-                <th className="px-6 py-4">Time In</th>
-                <th className="px-6 py-4 text-center">Status</th>
-                <th className="px-6 py-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...tickets]
-                .sort((a, b) => b.id - a.id)
-                .map((ticket) => (
-                  <tr
-                    key={ticket.id}
-                    className="border-b border-slate-700 hover:bg-slate-800/50 transition-colors"
-                  >
-                    <td className="px-6 py-4 font-mono text-slate-400">
-                      #{ticket.id}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-slate-100">
-                      {ticket.clientName}
-                    </td>
-                    <td className="px-6 py-4 text-slate-300 italic">
-                      {ticket.service || "--"}
-                    </td>
-                    <td className="px-6 py-4 text-slate-300">
-                      {ticket.barber}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400">{ticket.time}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span
-                        className={`px-3 py-1  text-[10px] font-bold uppercase tracking-wider ${getStatusStyle(
-                          ticket.status
-                        )}`}
-                      >
-                        {ticket.status.replace(/-/g, " ")}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {ticket.status === "ready-to-pay" && (
-                        <button
-                          onClick={() => handleOpenPayModal(ticket)}
-                          className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs font-bold py-2 px-4  flex items-center gap-2 ml-auto shadow-[0_0_10px_rgba(212,175,55,0.3)] transition-all active:scale-95"
-                        >
-                          <CreditCard className="w-3.5 h-3.5" />
-                          Quick Pay
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* --- PAYMENT MODAL --- */}
-      {showPayModal && ticketToPay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-amber-500/30 w-full max-w-md  shadow-2xl animate-in zoom-in-95 duration-200 relative">
-            {/* Close Button */}
-            <button
-              onClick={() => setShowPayModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-100 transition-colors"
+      {/* --- 4. MAIN DATA TABLE --- */}
+      <DataTable
+        title="Flux en Direct (Live)"
+        headers={[
+          { label: "Ref" },
+          { label: "Client" },
+          { label: "Prestation" },
+          { label: "Barbier" },
+          { label: "Heure" },
+          { label: "Statut" },
+          { label: "Action", align: "right" },
+        ]}
+      >
+        {liveTickets.length > 0 ? (
+          liveTickets.map((ticket) => (
+            <tr
+              key={ticket.id}
+              className="border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors"
             >
-              <X className="w-5 h-5" />
-            </button>
+              <td className="px-6 py-4 font-mono text-slate-500 font-bold text-xs">
+                #{ticket.id}
+              </td>
+              <td className="px-6 py-4 font-bold text-slate-200 uppercase text-xs tracking-tight">
+                {ticket.clientName}
+              </td>
+              <td className="px-6 py-4 text-slate-300 italic text-sm">
+                {ticket.service || "--"}
+              </td>
+              <td className="px-6 py-4 text-slate-400 uppercase text-[10px] font-bold tracking-widest">
+                {ticket.barber}
+              </td>
+              <td className="px-6 py-4 text-slate-400 font-mono text-sm">
+                {ticket.time}
+              </td>
+              <td className="px-6 py-4">
+                <StatusBadge status={ticket.status} />
+              </td>
+              <td className="px-6 py-4 text-right flex justify-end gap-2">
+                {["waiting", "in-progress"].includes(ticket.status) && (
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      handleCancelTicket(ticket.id, ticket.clientName)
+                    }
+                    className="text-red-500 hover:text-red-400 py-2 px-3 text-[10px]"
+                  >
+                    <Ban size={14} />
+                  </Button>
+                )}
+                {ticket.status === "ready-to-pay" && (
+                  <Button
+                    variant="primary"
+                    onClick={() => handleOpenPayModal(ticket)}
+                    className="py-2 px-4 text-[10px]"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 mr-1" /> Encaisser
+                  </Button>
+                )}
+              </td>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td
+              colSpan="7"
+              className="py-12 text-center text-slate-500 font-bold uppercase tracking-widest text-xs"
+            >
+              Le salon est actuellement vide.
+            </td>
+          </tr>
+        )}
+      </DataTable>
 
-            <div className="p-6 pt-8 text-center">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 bg-amber-900/30 mb-4">
-                <DollarSign className="h-6 w-6 text-amber-400" />
+      {/* --- 5. PAYMENT MODAL --- */}
+      <Modal
+        isOpen={showPayModal}
+        onClose={() => !isSubmitting && setShowPayModal(false)}
+      >
+        {/* ... (Payment Modal remains exactly the same as previously built) ... */}
+        {ticketToPay && (
+          <div className="p-8 text-center border-t-4 border-amber-500">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 bg-amber-500/10 mb-4 border border-amber-500/30">
+              <DollarSign className="h-6 w-6 text-amber-500" />
+            </div>
+            <h3 className="text-2xl font-serif font-bold text-slate-100 mb-1 uppercase tracking-wider">
+              Validation Caisse
+            </h3>
+            <p className="text-xs text-slate-500 font-mono mb-6 uppercase tracking-widest border-b border-slate-800 pb-4">
+              Ticket Ref: #{ticketToPay.id}
+            </p>
+
+            <div className="bg-slate-950 p-4 text-left mb-6 space-y-2 border border-slate-800 shadow-inner">
+              <div className="flex justify-between items-center border-b border-slate-800/50 pb-2">
+                <span className="text-xs uppercase tracking-wider font-bold text-slate-500">
+                  Client:
+                </span>
+                <span className="text-slate-100 font-bold uppercase truncate max-w-[150px]">
+                  {ticketToPay.clientName}
+                </span>
               </div>
-              <h3 className="text-2xl font-serif font-bold text-slate-100 mb-1">
-                Confirm Payment
-              </h3>
-              <p className="text-sm text-slate-400 mb-6">
-                Ticket #{ticketToPay.id}
-              </p>
-
-              <div className="bg-slate-800 p-4 text-left mb-6 space-y-2 border border-slate-700">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Client:</span>
-                  <span className="text-slate-100 font-medium">
-                    {ticketToPay.clientName}
+              <div className="flex justify-between items-center pt-1 border-b border-slate-800/50 pb-2">
+                <span className="text-xs uppercase tracking-wider font-bold text-slate-500">
+                  Barbier:
+                </span>
+                <span className="text-slate-300 font-medium uppercase tracking-widest text-[10px]">
+                  {ticketToPay.barber}
+                </span>
+              </div>
+              <div className="pt-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300 italic text-sm">
+                    {ticketToPay.service}
                   </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Barber:</span>
-                  <span className="text-slate-100 font-medium">
-                    {ticketToPay.barber}
-                  </span>
-                </div>
-                <div className="border-t border-slate-700 my-2 pt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-100">
-                      {ticketToPay.service}
-                    </span>
-                    <span className="text-slate-100 font-mono">
-                      ${priceToPay.toFixed(2)}
-                    </span>
-                  </div>
-                  {/* Future: Add product list here */}
-                </div>
-                <div className="border-t border-slate-600 pt-3 mt-3 flex justify-between items-center">
-                  <span className="text-lg font-bold text-amber-400">
-                    Total to Pay
-                  </span>
-                  <span className="text-2xl font-bold text-amber-400 font-mono">
-                    ${priceToPay.toFixed(2)}
+                  <span className="text-slate-300 font-mono">
+                    DZD {(ticketToPay.price || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setShowPayModal(false)}
-                  className="py-3 px-4 bg-transparent border border-slate-600 text-slate-300  hover:bg-slate-800 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmPayment}
-                  className="py-3 px-4 bg-green-600 hover:bg-green-500 text-white  transition-colors font-bold shadow-[0_0_10px_rgba(22,163,74,0.3)]"
-                >
-                  Confirm Paid
-                </button>
+              <div className="border-t border-slate-700 pt-4 mt-4 flex justify-between items-center bg-green-950/20 px-2 pb-2">
+                <span className="text-xs font-bold text-green-500 uppercase tracking-widest">
+                  Net à Payer
+                </span>
+                <span className="text-3xl font-bold text-green-400 font-mono">
+                  DZD {(ticketToPay.price || 0).toFixed(2)}
+                </span>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-8">
+              <Button
+                variant="outline"
+                fullWidth
+                onClick={() => setShowPayModal(false)}
+                className="py-4"
+                disabled={isSubmitting}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={handleConfirmPayment}
+                className="py-4 bg-green-600 border-green-500 hover:bg-green-500 shadow-[0_0_15px_rgba(22,163,74,0.3)]"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "..." : "Confirmer Paiement"}
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

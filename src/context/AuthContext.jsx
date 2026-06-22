@@ -1,37 +1,51 @@
-"use client"
+import { createContext, useContext, useState, useEffect } from "react";
+import api from "../utils/api";
 
-import { createContext, useContext, useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+const AuthContext = createContext();
 
-const AuthContext = createContext(undefined)
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-export function AuthProvider({ children }) {
-  const [userRole, setUserRole] = useState(null)
-  const [userEmail, setUserEmail] = useState(null)
-  const navigate = useNavigate()
-
+  // Check storage when app loads
   useEffect(() => {
-    const role = localStorage.getItem("userRole")
-    const email = localStorage.getItem("userEmail")
-    setUserRole(role)
-    setUserEmail(email)
-  }, [])
+    const storedUser = localStorage.getItem("picasso_user");
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setLoading(false);
+  }, []);
+
+  const login = async (username, password) => {
+    try {
+      const response = await api.post("/auth/login", { username, password });
+      const { token, user: userData } = response.data;
+
+      // Store auth session
+      localStorage.setItem("picasso_token", token);
+      localStorage.setItem("picasso_user", JSON.stringify(userData));
+      setUser(userData);
+
+      return { success: true, role: userData.role };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || "Erreur de connexion",
+      };
+    }
+  };
 
   const logout = () => {
-    localStorage.removeItem("userRole")
-    localStorage.removeItem("userEmail")
-    setUserRole(null)
-    setUserEmail(null)
-    navigate("/")
-  }
+    localStorage.removeItem("picasso_token");
+    localStorage.removeItem("picasso_user");
+    setUser(null);
+  };
 
-  return <AuthContext.Provider value={{ userRole, userEmail, logout }}>{children}</AuthContext.Provider>
-}
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+};
 
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider")
-  }
-  return context
-}
+export const useAuth = () => useContext(AuthContext);

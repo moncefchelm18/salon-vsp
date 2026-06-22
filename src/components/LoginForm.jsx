@@ -1,114 +1,96 @@
 "use client";
 
 import { useState } from "react";
-import logoImage from "../images/logo.png";
+import Button from "./common/Button"; // Reusing our master button
+import { User, Lock } from "lucide-react";
+import logo from "../assets/images/logo.png";
 
 export default function LoginForm({ onSubmit, isLoading }) {
-  const [email, setEmail] = useState("");
-  const [pin, setPin] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = (e) => {
+    console.log("Submitting login form with:", { username, password });
     e.preventDefault();
     setError("");
 
-    if (!email || !pin) {
+    if (!username || !password) {
       setError("Please fill in all fields");
       return;
     }
 
-    if (pin.length !== 4) {
-      setError("PIN must be 4 digits");
+    if (password.length < 4) {
+      setError("Password must be at least 4 characters long");
       return;
     }
 
-    onSubmit(email, pin);
+    onSubmit(username, password);
   };
 
   return (
-    <div className="w-full max-w-md">
-      <div className="text-center mb-8">
-        <h1 className="font-serif text-5xl font-bold text-amber-400 mb-2">
-          Sallon Picasso
-        </h1>
-        <p className="text-slate-400 text-sm tracking-wide">
-          LUXURY BARBERSHOP MANAGEMENT
-        </p>
+    <div className="bg-slate-900 border border-slate-800 p-8 w-full max-w-md shadow-2xl relative">
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-600 via-amber-400 to-amber-600"></div>
+
+      <div className="flex flex-col items-center mb-8">
         <img
-          src={logoImage}
-          alt="Sallon Picasso Logo"
-          className="mx-auto mt-4 w-24 h-24"
+          src={logo}
+          alt="Sallon Picasso"
+          className="w-20 h-20 object-contain mb-4"
         />
+        <h2 className="text-2xl font-serif font-bold text-amber-500 uppercase tracking-widest text-center">
+          Système Caisse
+        </h2>
+        <p className="text-slate-400 text-xs font-bold tracking-widest uppercase mt-2">
+          Authentification Requise
+        </p>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 shadow-2xl ">
-        <div className="p-8">
-          <h2 className="text-2xl font-serif font-bold text-slate-100 mb-6 text-center">
-            Sign In
-          </h2>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 placeholder:text-slate-500  px-3 py-2"
-                disabled={isLoading}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                PIN
-              </label>
-              <input
-                type="password"
-                placeholder="Enter 4-digit PIN"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.slice(0, 4))}
-                maxLength={4}
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 placeholder:text-slate-500  px-3 py-2"
-                disabled={isLoading}
-              />
-            </div>
-
-            {error && (
-              <div className="bg-red-900/20 border border-red-700 text-red-300 px-4 py-2  text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold py-2 mt-6  disabled:opacity-50"
-            >
-              {isLoading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
-
-          <div className="mt-6 pt-6 border-t border-slate-700">
-            <p className="text-xs text-slate-500 text-center mb-3">
-              Demo Credentials:
-            </p>
-            <div className="space-y-2 text-xs text-slate-400">
-              <p>
-                <span className="text-amber-400">Receptionist:</span>{" "}
-                receptionist@gmail.com / 0000
-              </p>
-              <p>
-                <span className="text-amber-400">Barber:</span>{" "}
-                barbers@gmail.com / 0000
-              </p>
-            </div>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+            Nom d'utilisateur
+          </label>
+          <div className="relative">
+            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 text-slate-100 pl-11 pr-4 py-3 focus:border-amber-500 focus:outline-none transition-colors rounded-none placeholder:text-slate-700 font-bold"
+              placeholder="Ex: receptionist"
+              required
+            />
           </div>
         </div>
-      </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+            Mot de passe / Code
+          </label>
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 text-slate-100 pl-11 pr-4 py-3 focus:border-amber-500 focus:outline-none transition-colors rounded-none placeholder:text-slate-700 font-bold"
+              placeholder="••••"
+              required
+            />
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          variant="primary"
+          fullWidth
+          className="py-4 shadow-lg shadow-amber-500/20"
+          disabled={isLoading}
+        >
+          {isLoading ? "Vérification..." : "Accéder à la caisse"}
+        </Button>
+      </form>
     </div>
   );
 }

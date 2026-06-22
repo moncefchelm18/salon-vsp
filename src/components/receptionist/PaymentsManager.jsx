@@ -1,276 +1,491 @@
-"use client";
+import { useState, useEffect, useMemo } from "react";
+import { Plus } from "lucide-react";
+import { toast } from "react-hot-toast";
+import api from "../../utils/api";
 
-import { useState, useMemo } from "react";
-import { mockTickets, mockServices, mockBarbers } from "../../lib/mockData";
-import {
-  DollarSign,
-  CreditCard,
-  Search,
-  CheckCircle,
-  Ban,
-  X,
-  Clock,
-} from "lucide-react";
+import Button from "../common/Button";
+
+// --- SOUS-COMPOSANTS DÉCOUPÉS ---
+import PaymentsQueue from "./payments/PaymentsQueue";
+import PaymentsHistory from "./payments/PaymentsHistory";
+import CheckoutModal from "./payments/CheckoutModal";
+import TicketReceiptModal from "./payments/TicketReceiptModal";
 
 export default function PaymentsManager() {
-  // Main state for all of today's tickets, this is our "source of truth"
-  const [tickets, setTickets] = useState(mockTickets);
+  const [tickets, setTickets] = useState([]);
+  const [barbers, setBarbers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // State for the payment confirmation modal
+  // States pour la modale de facturation
   const [showPayModal, setShowPayModal] = useState(false);
   const [ticketToPay, setTicketToPay] = useState(null);
   const [priceToPay, setPriceToPay] = useState(0);
 
-  // State for filtering the history table
+  const [discountType, setDiscountType] = useState(null);
+  const [discountValue, setDiscountValue] = useState(0);
+
+  // States menu café
+  const [showPOSModal, setShowPOSModal] = useState(false);
+  const [cafeCategories, setCafeCategories] = useState([]);
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [addedCafeItems, setAddedCafeItems] = useState([]);
+
+  // States Numpad
+  const [showNumpadModal, setShowNumpadModal] = useState(false);
+  const [numpadValue, setNumpadValue] = useState("0");
+  const [tipAmount, setTipAmount] = useState(0);
+  const [numpadTarget, setNumpadTarget] = useState("price");
+  const [ticketForPostTip, setTicketForPostTip] = useState(null);
+
+  // States reçus / historique
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [ticketToView, setTicketToView] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBarber, setFilterBarber] = useState("all");
 
-  // --- DERIVED DATA ---
-  // Live queue of clients ready to pay
-  const pendingPayments = tickets.filter(
-    (ticket) => ticket.status === "ready-to-pay"
-  );
+  // States Crédit Client
+  const [registeredClients, setRegisteredClients] = useState([]);
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [isPartialPayment, setIsPartialPayment] = useState(false);
+  const [paidAmountInput, setPaidAmountInput] = useState("0");
+  const [isCreatingNewClient, setIsCreatingNewClient] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
 
-  // Historical list of completed payments, with filtering applied
+  // States Vente Manuelle Directe
+  const [availableServices, setAvailableServices] = useState([]);
+  const [manualBarberId, setManualBarberId] = useState("");
+  const [manualService, setManualService] = useState(null);
+  const [manualClientName, setManualClientName] = useState("Client de passage");
+  const [manualPhone, setManualPhone] = useState("");
+
+  const loadData = async () => {
+    try {
+      const [
+        barberRes,
+        liveRes,
+        historyRes,
+        cafeMenuRes,
+        clientRes,
+        servicesRes,
+      ] = await Promise.all([
+        api.get("/barbers"),
+        api.get("/tickets/live"),
+        api.get("/tickets/history"),
+        api.get("/cafe/menu"),
+        api.get("/clients"),
+        api.get("/services"),
+      ]);
+
+      setBarbers(barberRes.data);
+      setCafeCategories(cafeMenuRes.data);
+      setRegisteredClients(clientRes.data);
+      setAvailableServices(servicesRes.data);
+      if (cafeMenuRes.data.length > 0)
+        setActiveCategory(cafeMenuRes.data[0].id);
+
+      const combined = [...liveRes.data, ...historyRes.data].sort(
+        (a, b) => b.id - a.id,
+      );
+      setTickets(combined);
+    } catch (error) {
+      toast.error("Échec de synchronisation de la caisse.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const pendingPayments = tickets.filter((t) => t.status === "ready-to-pay");
+
   const completedPaymentsHistory = useMemo(() => {
     return tickets
-      .filter((ticket) => ticket.status === "completed")
+      .filter((t) => t.status === "completed")
       .filter((ticket) => {
-        // Barber filter
-        if (filterBarber !== "all" && ticket.barber !== filterBarber) {
+        if (filterBarber !== "all" && ticket.barber !== filterBarber)
           return false;
-        }
-        // Search filter
         if (
           searchTerm &&
           !ticket.clientName.toLowerCase().includes(searchTerm.toLowerCase())
-        ) {
+        )
           return false;
-        }
         return true;
       });
-  }, [tickets, searchTerm, filterBarber]); // Recalculates when source data or filters change
+  }, [tickets, searchTerm, filterBarber]);
 
-  // --- HANDLERS ---
+  const totalRevenueToday = completedPaymentsHistory.reduce(
+    (total, ticket) => total + (ticket.price || 0),
+    0,
+  );
+
+  // --- ACTIONS ---
   const handleOpenPayModal = (ticket) => {
-    const service = mockServices.find((s) => s.name === ticket.service);
     setTicketToPay(ticket);
-    setPriceToPay(service ? service.price : 0);
+    setPriceToPay(ticket.price || 0);
+    setDiscountType(null);
+    setDiscountValue(0);
+    setAddedCafeItems([]);
+    setTipAmount(0);
+    setShowPOSModal(false);
     setShowPayModal(true);
+    setIsPartialPayment(false);
+    setSelectedClientId(ticket.clientId ? ticket.clientId.toString() : "");
+    setPaidAmountInput("0");
   };
 
-  const handleConfirmPayment = () => {
-    if (!ticketToPay) return;
-    const updatedTickets = tickets.map((t) =>
-      t.id === ticketToPay.id ? { ...t, status: "completed" } : t
+  const handleOpenManualPayModal = () => {
+    setManualBarberId("");
+    setManualService(null);
+    setManualClientName("Client de passage");
+    setManualPhone("");
+    handleOpenPayModal({
+      id: 0,
+      clientName: "Client de passage",
+      barber: "",
+      barberId: "",
+      service: "",
+      price: 0,
+      status: "ready-to-pay",
+      cafeOrders: [],
+    });
+  };
+
+  const handleVoidPayment = async (ticket) => {
+    if (
+      window.confirm(
+        `Annuler la facture de ${ticket.clientName} ? Cette action enregistrera une perte de DZD ${ticket.price.toFixed(2)}.`,
+      )
+    ) {
+      setIsProcessing(true);
+      try {
+        await api.delete(`/tickets/${ticket.id}`);
+        toast.success(`Facture annulée.`);
+        loadData();
+      } catch (error) {
+        toast.error("Impossible d'annuler.");
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleAddCafeItemFromTouchMenu = (product) => {
+    setAddedCafeItems((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing)
+        return prev.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      return [
+        ...prev,
+        {
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          quantity: 1,
+        },
+      ];
+    });
+    toast.success(`${product.name} ajouté`, { id: "pos-add" });
+  };
+
+  const handleRemoveCafeItem = (id) =>
+    setAddedCafeItems((prev) => prev.filter((item) => item.id !== id));
+
+  const handleUpdateCafeItemQuantity = (id, delta) => {
+    setAddedCafeItems((prev) =>
+      prev
+        .map((item) => {
+          if (item.id === id) {
+            const newQty = item.quantity + delta;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter(Boolean),
     );
-    setTickets(updatedTickets);
-    setShowPayModal(false);
   };
 
-  // --- STATS ---
-  const totalRevenueToday = completedPaymentsHistory.reduce((total, ticket) => {
-    const service = mockServices.find((s) => s.name === ticket.service);
-    return total + (service ? service.price : 0);
-  }, 0);
+  const calculatedGrandTotal = useMemo(() => {
+    const existingCafeTotal =
+      ticketToPay?.cafeOrders?.reduce(
+        (sum, order) => sum + order.totalPrice,
+        0,
+      ) || 0;
+    const directDrinksTotal = addedCafeItems.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
+    const subTotal = priceToPay + existingCafeTotal + directDrinksTotal;
+
+    let discountAmount = 0;
+    if (discountType === "percent")
+      discountAmount = subTotal * (discountValue / 100);
+    else if (discountType === "amount") discountAmount = discountValue;
+
+    return Math.max(0, subTotal - discountAmount) + tipAmount;
+  }, [
+    priceToPay,
+    ticketToPay,
+    addedCafeItems,
+    discountType,
+    discountValue,
+    tipAmount,
+  ]);
+
+  const handleConfirmPayment = async () => {
+    if (!ticketToPay) return;
+    if (ticketToPay.id === 0) {
+      if (!manualBarberId)
+        return toast.error("Veuillez sélectionner un coiffeur.");
+      if (!manualService)
+        return toast.error("Veuillez sélectionner une prestation.");
+    }
+    setIsProcessing(true);
+    try {
+      const existingCafeTotal =
+        ticketToPay?.cafeOrders?.reduce(
+          (sum, order) => sum + order.totalPrice,
+          0,
+        ) || 0;
+      const directDrinksTotal = addedCafeItems.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0,
+      );
+      const subTotal = priceToPay + existingCafeTotal + directDrinksTotal;
+
+      let discountAmount = 0;
+      if (discountType === "percent")
+        discountAmount = subTotal * (discountValue / 100);
+      else if (discountType === "amount") discountAmount = discountValue;
+
+      const finalGrandTotalWithoutTip = Math.max(0, subTotal - discountAmount);
+      const finalHaircutPrice = Math.max(
+        0,
+        finalGrandTotalWithoutTip - existingCafeTotal - directDrinksTotal,
+      );
+      const actualPaid = isPartialPayment
+        ? parseFloat(paidAmountInput)
+        : finalGrandTotalWithoutTip;
+
+      const payload = {
+        totalPrice: finalHaircutPrice,
+        additionalCafeItems: addedCafeItems,
+        tip: tipAmount,
+        clientId:
+          isPartialPayment && selectedClientId
+            ? Number(selectedClientId)
+            : undefined,
+        paidAmount: actualPaid,
+      };
+
+      if (ticketToPay.id === 0) {
+        await api.post("/tickets/manual-pay", {
+          ...payload,
+          clientName: manualClientName,
+          phone: manualPhone,
+          barberId: Number(manualBarberId),
+          serviceName: manualService.name,
+        });
+      } else {
+        await api.patch(`/tickets/${ticketToPay.id}/pay`, payload);
+      }
+
+      toast.success(
+        `Encaissement de DZD ${calculatedGrandTotal.toFixed(2)} validé !`,
+      );
+      setShowPayModal(false);
+      setTicketToPay(null);
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Erreur d'encaissement.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleQuickCreateClient = async () => {
+    if (!newClientName.trim()) return toast.error("Nom du client obligatoire.");
+    setIsProcessing(true);
+    try {
+      const res = await api.post("/clients", {
+        name: newClientName,
+        phone: newClientPhone,
+      });
+      setRegisteredClients((prev) =>
+        [...prev, res.data].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setSelectedClientId(res.data.id.toString());
+      setIsCreatingNewClient(false);
+      setNewClientName("");
+      setNewClientPhone("");
+      toast.success("Client enregistré !");
+    } catch (error) {
+      toast.error("Erreur de création.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleNumpadSubmit = async () => {
+    const val = parseFloat(numpadValue);
+    if (isNaN(val) || val < 0) return toast.error("Montant invalide");
+
+    if (numpadTarget === "discount-percent") {
+      if (val > 100) return toast.error("La remise ne peut dépasser 100%");
+      setDiscountType("percent");
+      setDiscountValue(val);
+      setShowNumpadModal(false);
+    } else if (numpadTarget === "discount-amount") {
+      setDiscountType("amount");
+      setDiscountValue(val);
+      setShowNumpadModal(false);
+    } else if (numpadTarget === "tip") {
+      setTipAmount(val);
+      setShowNumpadModal(false);
+    } else if (numpadTarget === "paid-amount") {
+      if (val > calculatedGrandTotal)
+        return toast.error("Le montant payé ne peut dépasser le total.");
+      setPaidAmountInput(val.toString());
+      setShowNumpadModal(false);
+    } else if (numpadTarget === "post-tip") {
+      setIsProcessing(true);
+      try {
+        await api.patch(`/tickets/${ticketForPostTip.id}/tip`, {
+          tipAmount: val,
+        });
+        toast.success(`Pourboire ajouté.`);
+        setShowNumpadModal(false);
+        setTicketForPostTip(null);
+        loadData();
+      } catch (err) {
+        toast.error("Erreur d'ajout");
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
 
   return (
-    <div className="space-y-8">
-      {/* --- SECTION 1: LIVE PAYMENT QUEUE --- */}
-      <div className="bg-slate-900 border border-slate-800 p-6 ">
-        <h2 className="text-xl font-serif font-bold text-amber-400 mb-4 flex items-center gap-3">
-          <Clock className="w-6 h-6" />
-          Clients Waiting for Payment ({pendingPayments.length})
-        </h2>
-        {pendingPayments.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 flex flex-col items-center gap-3">
-            <CheckCircle className="w-12 h-12" />
-            <p className="font-medium text-lg">Payment queue is clear!</p>
-            <p>
-              Clients will appear here after the barber finishes their service.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingPayments.map((ticket) => {
-              const service = mockServices.find(
-                (s) => s.name === ticket.service
-              );
-              const price = service ? service.price : 0;
-              return (
-                <div
-                  key={ticket.id}
-                  className="bg-slate-800/50 border border-amber-500/30  p-4 flex flex-col justify-between shadow-lg"
-                >
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <p className="font-semibold text-lg text-slate-100">
-                        {ticket.clientName}
-                      </p>
-                      <p className="text-slate-400 text-sm font-mono">
-                        #{ticket.id}
-                      </p>
-                    </div>
-                    <p className="text-sm text-slate-300">
-                      <span className="text-slate-500">From:</span>{" "}
-                      {ticket.barber}
-                    </p>
-                    <p className="text-sm text-slate-300">
-                      <span className="text-slate-500">Service:</span>{" "}
-                      {ticket.service}
-                    </p>
-                  </div>
-                  <div className="border-t border-slate-700 mt-4 pt-3 flex items-center justify-between">
-                    <p className="text-lg text-amber-400 font-bold">Total:</p>
-                    <p className="text-2xl font-bold font-mono text-amber-400">
-                      ${price.toFixed(2)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleOpenPayModal(ticket)}
-                    className="mt-4 w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-2  transition-all"
-                  >
-                    Process Payment
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+    <div className="space-y-8 p-1">
+      {/* ── SECTION 1 : FILE D'ATTENTE EN COURS ── */}
+      <PaymentsQueue
+        pendingPayments={pendingPayments}
+        isProcessing={isProcessing}
+        onVoidPayment={handleVoidPayment}
+        onOpenPayModal={handleOpenPayModal}
+      />
+
+      {/* ── BOUTON VENTE MANUELLE DIRECTE ── */}
+      <div className="flex justify-end p-4 bg-slate-900 border border-slate-800">
+        <Button
+          variant="success"
+          onClick={handleOpenManualPayModal}
+          className="py-4 px-8 font-bold text-xs shadow-lg shadow-green-500/10 animate-pulse"
+        >
+          <Plus size={16} className="mr-2" /> Vente Directe / Facturer sans
+          ticket
+        </Button>
       </div>
 
-      {/* --- SECTION 2: TODAY'S TRANSACTION HISTORY --- */}
-      <div className="bg-slate-900 border border-slate-800 ">
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-            <div>
-              <h2 className="text-xl font-serif font-bold text-amber-400">
-                Today's Completed Transactions
-              </h2>
-              <p className="text-slate-400 text-sm mt-1">
-                Total Revenue from {completedPaymentsHistory.length} completed
-                services:{" "}
-                <span className="font-bold text-green-400">
-                  ${totalRevenueToday.toFixed(2)}
-                </span>
-              </p>
-            </div>
-            {/* Filter controls */}
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-500 absolute top-1/2 left-3 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search client..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-sm  px-3 py-2 pl-9 w-48"
-                />
-              </div>
-              <select
-                value={filterBarber}
-                onChange={(e) => setFilterBarber(e.target.value)}
-                className="bg-slate-800 border border-slate-700 text-sm  px-3 py-2"
-              >
-                <option value="all">All Barbers</option>
-                {mockBarbers.map((b) => (
-                  <option key={b.id} value={b.name}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-800/50">
-              {/* Table header remains the same */}
-              <tr className="border-b border-slate-700">
-                <th className="text-left py-4 px-6 text-slate-400 font-medium">
-                  Ticket ID
-                </th>
-                <th className="text-left py-4 px-6 text-slate-400 font-medium">
-                  Client Name
-                </th>
-                <th className="text-left py-4 px-6 text-slate-400 font-medium">
-                  Barber
-                </th>
-                <th className="text-left py-4 px-6 text-slate-400 font-medium">
-                  Service
-                </th>
-                <th className="text-right py-4 px-6 text-slate-400 font-medium">
-                  Amount Paid
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {completedPaymentsHistory.length > 0 ? (
-                completedPaymentsHistory.map((payment) => (
-                  <tr key={payment.id} className="border-b border-slate-800">
-                    <td className="py-4 px-6 text-slate-400 font-mono">
-                      #{payment.id}
-                    </td>
-                    <td className="py-4 px-6 text-slate-100 font-medium">
-                      {payment.clientName}
-                    </td>
-                    <td className="py-4 px-6 text-slate-300">
-                      {payment.barber}
-                    </td>
-                    <td className="py-4 px-6 text-slate-300">
-                      {payment.service}
-                    </td>
-                    <td className="py-4 px-6 text-right text-green-400 font-semibold font-mono">
-                      $
-                      {mockServices
-                        .find((s) => s.name === payment.service)
-                        ?.price.toFixed(2) || "0.00"}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="5" className="text-center py-12 text-slate-500">
-                    <div className="flex flex-col items-center gap-2">
-                      <Ban className="w-8 h-8" />
-                      <p>No completed payments match your filters.</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* ── SECTION 2 : HISTORIQUE ── */}
+      <PaymentsHistory
+        completedPaymentsHistory={completedPaymentsHistory}
+        totalRevenueToday={totalRevenueToday}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        filterBarber={filterBarber}
+        setFilterBarber={setFilterBarber}
+        barbers={barbers}
+        onViewTicket={(ticket) => {
+          setTicketToView(ticket);
+          setShowViewModal(true);
+        }}
+        onOpenPostTip={(ticket) => {
+          setTicketForPostTip(ticket);
+          setNumpadTarget("post-tip");
+          setNumpadValue("0");
+          setShowNumpadModal(true);
+        }}
+      />
 
-      {/* Payment Modal (same as dashboard) */}
-      {showPayModal && ticketToPay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-amber-500/30 w-full max-w-md  shadow-2xl">
-            <button
-              onClick={() => setShowPayModal(false)}
-              className="absolute top-4 right-4 text-slate-400"
-            >
-              <X />
-            </button>
-            {/* Modal Content - same logic as before */}
-            <div className="p-6 pt-8 text-center">
-              <h3 className="text-2xl font-serif font-bold text-slate-100">
-                Confirm Payment
-              </h3>
-              <p className="text-lg text-amber-400 font-bold font-mono my-4">
-                ${priceToPay.toFixed(2)}
-              </p>
-              <button
-                onClick={handleConfirmPayment}
-                className="w-full bg-green-600 text-white font-bold py-3 "
-              >
-                Confirm Paid
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── MODALE CHECKOUT (LA GÉANTE) ── */}
+      <CheckoutModal
+        isOpen={showPayModal}
+        onClose={() => !isProcessing && setShowPayModal(false)}
+        isProcessing={isProcessing}
+        ticketToPay={ticketToPay}
+        manualBarberId={manualBarberId}
+        setManualBarberId={setManualBarberId}
+        barbers={barbers}
+        manualService={manualService}
+        setManualService={setManualService}
+        availableServices={availableServices}
+        setPriceToPay={setPriceToPay}
+        manualClientName={manualClientName}
+        setManualClientName={setManualClientName}
+        manualPhone={manualPhone}
+        setManualPhone={setManualPhone}
+        priceToPay={priceToPay}
+        addedCafeItems={addedCafeItems}
+        handleUpdateCafeItemQuantity={handleUpdateCafeItemQuantity}
+        handleRemoveCafeItem={handleRemoveCafeItem}
+        discountType={discountType}
+        discountValue={discountValue}
+        setDiscountType={setDiscountType}
+        setDiscountValue={setDiscountValue}
+        handleOpenNumpad={(target) => {
+          setNumpadTarget(target);
+          setNumpadValue("0");
+          setShowNumpadModal(true);
+        }}
+        tipAmount={tipAmount}
+        setTipAmount={setTipAmount}
+        isPartialPayment={isPartialPayment}
+        setIsPartialPayment={setIsPartialPayment}
+        setPaidAmountInput={setPaidAmountInput}
+        isCreatingNewClient={isCreatingNewClient}
+        setIsCreatingNewClient={setIsCreatingNewClient}
+        selectedClientId={selectedClientId}
+        setSelectedClientId={setSelectedClientId}
+        registeredClients={registeredClients}
+        newClientName={newClientName}
+        setNewClientName={setNewClientName}
+        newClientPhone={newClientPhone}
+        setNewClientPhone={setNewClientPhone}
+        handleQuickCreateClient={handleQuickCreateClient}
+        paidAmountInput={paidAmountInput}
+        calculatedGrandTotal={calculatedGrandTotal}
+        handleConfirmPayment={handleConfirmPayment}
+        // Sous-modales du checkout
+        showPOSModal={showPOSModal}
+        setShowPOSModal={setShowPOSModal}
+        cafeCategories={cafeCategories}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        handleAddCafeItemFromTouchMenu={handleAddCafeItemFromTouchMenu}
+        showNumpadModal={showNumpadModal}
+        setShowNumpadModal={setShowNumpadModal}
+        numpadTarget={numpadTarget}
+        numpadValue={numpadValue}
+        setNumpadValue={setNumpadValue}
+        handleNumpadSubmit={handleNumpadSubmit}
+      />
+
+      {/* ── MODALE TICKET (REÇU) ── */}
+      <TicketReceiptModal
+        isOpen={showViewModal}
+        onClose={() => setShowViewModal(false)}
+        ticketToView={ticketToView}
+      />
     </div>
   );
 }

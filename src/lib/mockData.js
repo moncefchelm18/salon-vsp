@@ -127,3 +127,59 @@ export const mockTickets = [
     time: "12:15",
   },
 ];
+export const mockCafeItems = [
+  {
+    id: 1,
+    name: "Espresso",
+    category: "Drinks",
+    price: 2.5,
+    stock: 100,
+    image:
+      "https://images.unsplash.com/photo-1593443320739-7ae2ce285f8e?q=80&w=400",
+  },
+  {
+    id: 2,
+    name: "Latte",
+    category: "Drinks",
+    price: 4.0,
+    stock: 100,
+    image:
+      "https://images.unsplash.com/photo-1561584260-6b6f70a1da41?q=80&w=400",
+  },
+  {
+    id: 3,
+    name: "Croissant",
+    category: "Patisserie",
+    price: 3.0,
+    stock: 20,
+    image:
+      "https://images.unsplash.com/photo-1621289163242-03fa46859318?q=80&w=400",
+  },
+  {
+    id: 4,
+    name: "Pain au Chocolat",
+    category: "Patisserie",
+    price: 3.5,
+    stock: 18,
+    image:
+      "https://images.unsplash.com/photo-1638237979267-3331b643a65a?q=80&w=400",
+  },
+  {
+    id: 5,
+    name: "Jus d'Orange",
+    category: "Drinks",
+    price: 4.5,
+    stock: 30,
+    image:
+      "https://images.unsplash.com/photo-1600271886742-f049cd451bba?q=80&w=400",
+  },
+  {
+    id: 6,
+    name: "Quiche Lorraine",
+    category: "Salty Foods",
+    price: 6.0,
+    stock: 12,
+    image:
+      "https://images.unsplash.com/photo-1533535999813-f1127a3c3b4a?q=80&w=400",
+  },
+];

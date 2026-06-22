@@ -1,30 +1,53 @@
-"use client";
-
-import { useState } from "react";
-import { mockServices, mockProducts } from "../../lib/mockData";
+import { useState, useEffect } from "react";
 import {
   Scissors,
   Package,
   Plus,
   Edit,
   Trash2,
-  X,
-  Image as ImageIcon,
+  RefreshCcw,
 } from "lucide-react";
+import { toast } from "react-hot-toast";
+import api from "../../utils/api";
+
+import Button from "../common/Button";
+import Modal from "../common/Modal";
+import Input from "../common/Input";
+import ImageUpload from "../common/ImageUpload";
 
 export default function SalonManager() {
   const [activeTab, setActiveTab] = useState("services"); // 'services' or 'products'
 
-  // We need separate states for services and products
-  const [services, setServices] = useState(mockServices);
-  const [products, setProducts] = useState(mockProducts);
+  const [services, setServices] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // A unified modal state will handle both types
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState("service"); // 'service' or 'product'
-  const [modalMode, setModalMode] = useState("add"); // 'add' or 'edit'
+  const [modalType, setModalType] = useState("service");
+  const [modalMode, setModalMode] = useState("add");
   const [currentItem, setCurrentItem] = useState(null);
   const [formData, setFormData] = useState({});
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const [servicesRes, productsRes] = await Promise.all([
+        api.get("/services"),
+        api.get("/products"),
+      ]);
+      setServices(servicesRes.data);
+      setProducts(productsRes.data);
+    } catch (error) {
+      toast.error("Erreur de chargement des données");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const handleOpenModal = (type, mode, item = null) => {
     setModalType(type);
@@ -34,312 +57,334 @@ export default function SalonManager() {
       setFormData(item);
     } else {
       setCurrentItem(null);
-      const emptyForm =
+      setFormData(
         type === "service"
           ? { name: "", price: "", duration: "", image: "" }
-          : { name: "", salePrice: "", costPerUse: "", stock: "", image: "" };
-      setFormData(emptyForm);
+          : { name: "", salePrice: "", costPerUse: "", image: "" },
+      );
     }
     setIsModalOpen(true);
   };
 
-  const handleCloseModal = () => setIsModalOpen(false);
+  const handleCloseModal = () => {
+    if (!isSubmitting) setIsModalOpen(false);
+  };
 
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
-    // Basic validation
-    if (!formData.name || !formData.image) {
-      alert("Name and Image URL are required.");
-      return;
-    }
+  const handleSave = async () => {
+    if (!formData.name) return toast.error("Le nom est obligatoire.");
 
-    if (modalType === "service") {
-      if (modalMode === "add") {
-        setServices([...services, { id: Date.now(), ...formData }]);
-      } else {
-        setServices(
-          services.map((s) => (s.id === currentItem.id ? formData : s))
-        );
-      }
-    } else {
-      // It's a product
-      if (modalMode === "add") {
-        setProducts([...products, { id: Date.now(), ...formData }]);
-      } else {
-        setProducts(
-          products.map((p) => (p.id === currentItem.id ? formData : p))
-        );
-      }
-    }
+    setIsSubmitting(true);
+    const endpoint = modalType === "service" ? "/services" : "/products";
 
-    handleCloseModal();
+    try {
+      if (modalMode === "add") {
+        await api.post(endpoint, formData);
+        toast.success(`${formData.name} ajouté avec succès!`);
+      } else {
+        await api.put(`${endpoint}/${currentItem.id}`, formData);
+        toast.success(`${formData.name} mis à jour!`);
+      }
+      handleCloseModal();
+      fetchData();
+    } catch (error) {
+      toast.error("Erreur de sauvegarde");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (type, id) => {
-    if (!window.confirm("Are you sure you want to delete this item?")) return;
+  const handleDelete = async (type, id, name) => {
+    if (!window.confirm(`Voulez-vous vraiment supprimer "${name}" ?`)) return;
 
-    if (type === "service") {
-      setServices(services.filter((s) => s.id !== id));
-    } else {
-      setProducts(products.filter((p) => p.id !== id));
+    const endpoint = type === "service" ? "/services" : "/products";
+    try {
+      await api.delete(`${endpoint}/${id}`);
+      toast.success("Élément supprimé.");
+      fetchData();
+    } catch (error) {
+      toast.error("Échec de la suppression.");
     }
   };
+
+  // --- COMPOSANT CARTE REVISITÉ (Plus clair, plus coloré) ---
+  const ItemCard = ({ item, isService }) => (
+    <div className="bg-surface border border-subtle shadow-md hover:shadow-lg transition-all flex flex-col justify-between group">
+      <div>
+        {/* Image en couleur, avec un marqueur visuel clair en haut */}
+        <div
+          className={`h-1.5 w-full ${isService ? "bg-blue-500" : "bg-purple-500"}`}
+        />
+        <div className="bg-main border-b border-subtle relative h-40">
+          <img
+            src={
+              item.image ||
+              "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=600&auto=format&fit=crop"
+            }
+            alt={item.name}
+            className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+          />
+          {/* Badge de catégorie directement sur l'image */}
+          <span
+            className={`absolute top-2 right-2 px-2 py-1 text-xs font-bold text-white shadow-sm ${isService ? "bg-blue-600" : "bg-purple-600"}`}
+          >
+            {isService ? "SERVICE" : "PRODUIT"}
+          </span>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <h3 className="font-bold text-t-main text-lg leading-tight line-clamp-2">
+            {item.name}
+          </h3>
+
+          {isService ? (
+            <div className="flex justify-between items-center bg-main p-2 border border-subtle">
+              <div className="flex flex-col">
+                <span className="text-xs text-t-muted font-bold">Durée</span>
+                <span className="text-sm font-bold text-t-main">
+                  {item.duration} Min
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span className="text-xs text-t-muted font-bold">Tarif</span>
+                <span className="text-lg font-mono font-bold text-green-500">
+                  {Number(item.price).toFixed(2)} DA
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-main p-2 border border-subtle space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-t-muted">
+                  Prix de vente
+                </span>
+                <span className="text-lg font-mono font-bold text-green-500">
+                  {Number(item.salePrice).toFixed(2)} DA
+                </span>
+              </div>
+              <div className="flex justify-between items-center border-t border-subtle/50 pt-2">
+                <span className="text-xs font-bold text-t-muted">
+                  Coût d'utilisation
+                </span>
+                <span className="text-sm font-mono font-bold text-red-400">
+                  -{" "}
+                  {item.costPerUse
+                    ? Number(item.costPerUse).toFixed(2)
+                    : "0.00"}{" "}
+                  DA
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Boutons d'action bien visibles */}
+      <div className="flex border-t border-subtle bg-surface p-2 gap-2">
+        <Button
+          variant="secondary"
+          fullWidth
+          className="py-2 text-sm bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white"
+          onClick={() =>
+            handleOpenModal(isService ? "service" : "product", "edit", item)
+          }
+        >
+          <Edit size={16} /> Modifier
+        </Button>
+        <Button
+          variant="danger"
+          className="py-2 px-3 bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white"
+          onClick={() =>
+            handleDelete(isService ? "service" : "product", item.id, item.name)
+          }
+        >
+          <Trash2 size={16} />
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="flex border-b border-slate-800">
+      {/* --- TAB NAVIGATION (Boutons solides et colorés) --- */}
+      <div className="flex gap-2 p-1 bg-surface border border-subtle w-fit">
         <button
           onClick={() => setActiveTab("services")}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 ${
+          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
             activeTab === "services"
-              ? "border-amber-400 text-amber-400"
-              : "border-transparent text-slate-400 hover:text-white"
+              ? "bg-brand text-white shadow-md"
+              : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <Scissors className="w-4 h-4" />
-          Manage Services
+          <Scissors className="w-5 h-5" /> Prestations Coiffure
         </button>
         <button
           onClick={() => setActiveTab("products")}
-          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 ${
+          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
             activeTab === "products"
-              ? "border-amber-400 text-amber-400"
-              : "border-transparent text-slate-400 hover:text-white"
+              ? "bg-brand text-white shadow-md"
+              : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <Package className="w-4 h-4" />
-          Manage Products
+          <Package className="w-5 h-5" /> Produits Vente/Salon
         </button>
       </div>
 
-      {/* Conditional Content based on active tab */}
-      <div>
-        {/* --- SERVICES VIEW --- */}
-        {activeTab === "services" && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <p className="text-slate-300">
-                Manage all haircut and grooming services offered.
-              </p>
-              <button
-                onClick={() => handleOpenModal("service", "add")}
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 px-4  flex items-center gap-2"
-              >
-                <Plus /> Add Service
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {services.map((service) => (
-                <div
-                  key={service.id}
-                  className="bg-slate-900 border border-slate-800 overflow-hidden group"
-                >
-                  <img
-                    src={service.image}
-                    alt={service.name}
-                    className="h-40 w-full object-cover"
-                  />
-                  <div className="p-4">
-                    <h3 className="font-bold text-slate-100">{service.name}</h3>
-                    <div className="flex justify-between items-baseline mt-2">
-                      <p className="text-xl font-mono text-amber-400 font-bold">
-                        ${service.price}
-                      </p>
-                      <p className="text-sm text-slate-400">
-                        {service.duration} min
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex border-t border-slate-800">
-                    <button
-                      onClick={() =>
-                        handleOpenModal("service", "edit", service)
-                      }
-                      className="flex-1 text-center py-2 text-slate-300 hover:bg-slate-800/50 flex items-center justify-center gap-2"
-                    >
-                      <Edit size={14} /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete("service", service.id)}
-                      className="flex-1 text-center py-2 text-red-400 hover:bg-red-900/20 border-l border-slate-800 flex items-center justify-center gap-2"
-                    >
-                      <Trash2 size={14} /> Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {/* --- PRODUCTS VIEW --- */}
-        {activeTab === "products" && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <p className="text-slate-300">
-                Manage all retail products sold and used in the salon.
-              </p>
-              <button
-                onClick={() => handleOpenModal("product", "add")}
-                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 px-4  flex items-center gap-2"
-              >
-                <Plus /> Add Product
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  className="bg-slate-900 border border-slate-800 overflow-hidden group"
-                >
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="h-40 w-full object-cover"
-                  />
-                  <div className="p-4">
-                    <h3 className="font-bold text-slate-100">{product.name}</h3>
-                    <div className="flex justify-between items-center text-sm mt-2 text-slate-300">
-                      <span>Sale Price:</span>{" "}
-                      <span className="text-amber-400 font-mono font-bold text-lg">
-                        ${product.salePrice}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs mt-1 text-slate-400">
-                      <span>Cost per Use:</span>{" "}
-                      <span className="font-mono">
-                        ${Number(product.costPerUse).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex border-t border-slate-800">
-                    <button
-                      onClick={() =>
-                        handleOpenModal("product", "edit", product)
-                      }
-                      className="flex-1 text-center py-2 text-slate-300 hover:bg-slate-800/50 flex items-center justify-center gap-2"
-                    >
-                      <Edit size={14} /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete("product", product.id)}
-                      className="flex-1 text-center py-2 text-red-400 hover:bg-red-900/20 border-l border-slate-800 flex items-center justify-center gap-2"
-                    >
-                      <Trash2 size={14} /> Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      {/* --- HEADER ACTIONS --- */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 p-6 bg-surface border border-subtle shadow-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-t-main">
+            {activeTab === "services"
+              ? "Menu des Prestations"
+              : "Inventaire des Produits"}
+          </h2>
+          <p className="text-t-muted text-sm mt-1">
+            {activeTab === "services"
+              ? "Gérez les coupes, soins et barbes proposés aux clients."
+              : "Gérez les produits de revente et les consommables du salon."}
+          </p>
+        </div>
+        <Button
+          variant="success"
+          onClick={() =>
+            handleOpenModal(
+              activeTab === "services" ? "service" : "product",
+              "add",
+            )
+          }
+          className="py-3 px-6 text-sm"
+        >
+          <Plus size={18} /> Ajouter{" "}
+          {activeTab === "services" ? "une Prestation" : "un Produit"}
+        </Button>
       </div>
 
-      {/* --- UNIVERSAL MODAL --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg  shadow-2xl relative">
-            <button
-              onClick={handleCloseModal}
-              className="absolute top-4 right-4 text-slate-500 hover:text-slate-100"
-            >
-              <X />
-            </button>
-            <div className="p-6">
-              <h3 className="text-2xl font-serif font-bold text-amber-400 mb-6 capitalize">
-                {modalMode} {modalType}
-              </h3>
-              {modalType === "service" ? (
-                // Service Form
+      {/* --- GRID RENDER --- */}
+      {isLoading ? (
+        <div className="py-20 flex flex-col items-center justify-center text-brand space-y-4">
+          <RefreshCcw className="w-10 h-10 animate-spin" />
+          <span className="font-bold text-lg">
+            Chargement de l'inventaire...
+          </span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {activeTab === "services" && services.length === 0 && (
+            <div className="col-span-full py-12 text-center text-t-muted border border-subtle border-dashed bg-surface font-bold text-lg">
+              Aucune prestation configurée
+            </div>
+          )}
+          {activeTab === "services" &&
+            services.map((service) => (
+              <ItemCard key={service.id} item={service} isService={true} />
+            ))}
+
+          {activeTab === "products" && products.length === 0 && (
+            <div className="col-span-full py-12 text-center text-t-muted border border-subtle border-dashed bg-surface font-bold text-lg">
+              Aucun produit configuré
+            </div>
+          )}
+          {activeTab === "products" &&
+            products.map((product) => (
+              <ItemCard key={product.id} item={product} isService={false} />
+            ))}
+        </div>
+      )}
+
+      {/* --- UNIFIED MODAL --- */}
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
+        <div className="p-8">
+          <h3 className="text-2xl font-bold text-t-main mb-6 border-b border-subtle pb-4">
+            {modalMode === "add" ? "Ajouter" : "Modifier"}{" "}
+            {modalType === "service" ? "une Prestation" : "un Produit"}
+          </h3>
+
+          <div className="space-y-6">
+            <ImageUpload
+              label="Image de présentation"
+              value={formData.image || ""}
+              onChange={handleFormChange}
+            />
+
+            {modalType === "service" ? (
+              <>
+                <Input
+                  label="Nom de la prestation *"
+                  name="name"
+                  value={formData.name || ""}
+                  onChange={handleFormChange}
+                  placeholder="Ex: Coupe Classique"
+                />
                 <div className="grid grid-cols-2 gap-4">
-                  <input
-                    name="name"
-                    value={formData.name || ""}
-                    onChange={handleFormChange}
-                    placeholder="Service Name"
-                    className="col-span-2 bg-slate-800 border-slate-700  p-2"
-                  />
-                  <input
+                  <Input
+                    label="Tarif (DZD) *"
                     name="price"
+                    type="number"
                     value={formData.price || ""}
                     onChange={handleFormChange}
-                    placeholder="Price ($)"
-                    type="number"
-                    className="bg-slate-800 border-slate-700  p-2"
                   />
-                  <input
+                  <Input
+                    label="Durée estimée (Minutes)"
                     name="duration"
+                    type="number"
                     value={formData.duration || ""}
                     onChange={handleFormChange}
-                    placeholder="Duration (min)"
-                    type="number"
-                    className="bg-slate-800 border-slate-700  p-2"
-                  />
-                  <input
-                    name="image"
-                    value={formData.image || ""}
-                    onChange={handleFormChange}
-                    placeholder="Image URL"
-                    className="col-span-2 bg-slate-800 border-slate-700  p-2"
                   />
                 </div>
-              ) : (
-                // Product Form
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Nom du produit *"
+                  name="name"
+                  value={formData.name || ""}
+                  onChange={handleFormChange}
+                  placeholder="Ex: Cire Matifiante"
+                />
                 <div className="grid grid-cols-2 gap-4">
-                  <input
-                    name="name"
-                    value={formData.name || ""}
-                    onChange={handleFormChange}
-                    placeholder="Product Name"
-                    className="col-span-2 bg-slate-800 border-slate-700  p-2"
-                  />
-                  <input
+                  <Input
+                    label="Prix de Vente (DZD) *"
                     name="salePrice"
+                    type="number"
                     value={formData.salePrice || ""}
                     onChange={handleFormChange}
-                    placeholder="Sale Price ($)"
-                    type="number"
-                    className="bg-slate-800 border-slate-700  p-2"
                   />
-                  <input
+                  <Input
+                    label="Coût par utilisation (DZD)"
                     name="costPerUse"
+                    type="number"
                     value={formData.costPerUse || ""}
                     onChange={handleFormChange}
-                    placeholder="Cost per Use ($)"
-                    type="number"
-                    className="bg-slate-800 border-slate-700  p-2"
-                  />
-                  <input
-                    name="image"
-                    value={formData.image || ""}
-                    onChange={handleFormChange}
-                    placeholder="Image URL"
-                    className="col-span-2 bg-slate-800 border-slate-700  p-2"
                   />
                 </div>
-              )}
-              <div className="mt-8 flex justify-end gap-3">
-                <button
-                  onClick={handleCloseModal}
-                  className="bg-slate-700 text-slate-200 font-semibold px-4 py-2 "
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="bg-amber-500 text-slate-950 font-semibold px-4 py-2 "
-                >
-                  Save Changes
-                </button>
-              </div>
+              </>
+            )}
+
+            <div className="mt-8 pt-6 border-t border-subtle grid grid-cols-2 gap-4">
+              <Button
+                variant="outline"
+                onClick={handleCloseModal}
+                className="py-4 font-bold"
+                disabled={isSubmitting}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="success"
+                onClick={handleSave}
+                className="py-4 font-bold"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Sauvegarde..." : "Enregistrer"}
+              </Button>
             </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
