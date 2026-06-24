@@ -26,7 +26,8 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem("picasso_user", JSON.stringify(userData));
       setUser(userData);
 
-      return { success: true, role: userData.role };
+      // --- CORRECTION : On renvoie l'objet 'user' complet au composant Login.jsx ---
+      return { success: true, role: userData.role, user: userData };
     } catch (err) {
       return {
         success: false,

@@ -9,12 +9,20 @@ import Button from "../../../components/common/Button";
 import Modal from "../../../components/common/Modal";
 import VirtualNumpad from "../../../features/cafe-pos/VirtualNumpad"; // Ensure you created this file!
 
+import ThermalReceipt from "../../../components/common/ThermalReceipt"; // <-- IMPORT
+
 export default function CafeCommandes() {
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState(null);
 
-  const [cart, setCart] = useState([]);
-  const [heldOrders, setHeldOrders] = useState([]); // Array to store paused orders
+  const [cart, setCart] = useState(() => {
+    const savedCart = localStorage.getItem("picasso_cafe_cart");
+    return savedCart ? JSON.parse(savedCart) : [];
+  });
+  const [heldOrders, setHeldOrders] = useState(() => {
+    const savedHeld = localStorage.getItem("picasso_cafe_held_orders");
+    return savedHeld ? JSON.parse(savedHeld) : [];
+  });
   const [isHoldModalOpen, setIsHoldModalOpen] = useState(false); // NEW MODAL STATE
 
   const [isLoading, setIsLoading] = useState(true);
@@ -28,6 +36,10 @@ export default function CafeCommandes() {
   const [discountType, setDiscountType] = useState(null); // 'percent' ou 'amount' ou null
   const [discountValue, setDiscountValue] = useState(0);
   const [numpadTarget, setNumpadTarget] = useState("price");
+
+  const [printData, setPrintData] = useState(null);
+  const [printType, setPrintType] = useState("receipt"); // "receipt" ou "order"
+  const [printTrigger, setPrintTrigger] = useState(0);
 
   const fetchMenu = async () => {
     setIsLoading(true);
@@ -45,6 +57,18 @@ export default function CafeCommandes() {
   useEffect(() => {
     fetchMenu();
   }, []);
+  // Sauvegarder automatiquement le panier chaque fois qu'il est modifié
+  useEffect(() => {
+    localStorage.setItem("picasso_cafe_cart", JSON.stringify(cart));
+  }, [cart]);
+
+  // Sauvegarder automatiquement les commandes en attente chaque fois qu'elles changent
+  useEffect(() => {
+    localStorage.setItem(
+      "picasso_cafe_held_orders",
+      JSON.stringify(heldOrders),
+    );
+  }, [heldOrders]);
 
   // --- CART OPERATIONS ---
   const handleAddProduct = (product) => {
@@ -119,20 +143,39 @@ export default function CafeCommandes() {
   const handleHoldOrder = () => {
     if (cart.length === 0) return;
 
-    // Create a structured Hold object
+    const holdId = Date.now();
+    const timeString = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const subTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
     const newHeldOrder = {
-      holdId: Date.now(), // Unique ID
-      time: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      total: cart.reduce((s, i) => s + i.price * i.quantity, 0),
+      holdId: holdId,
+      time: timeString,
+      total: subTotal,
       items: [...cart],
     };
 
     setHeldOrders([...heldOrders, newHeldOrder]);
+
+    // --- 🖨️ IMPRIMER LE TICKET DE PRÉPARATION (CUISINE / TABLE) ---
+    setPrintType("order");
+    setPrintData({
+      ticketId: `TABLE-${holdId.toString().slice(-4)}`,
+      clientName: `Commande Table (${timeString})`,
+      items: cart.map((i) => ({
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+      })),
+      grandTotal: subTotal,
+    });
+    setPrintTrigger((prev) => prev + 1); // Déclenche l'impression
+
     setCart([]);
-    toast.success("Commande mise en attente.");
+    toast.success("Commande mise en attente & Ticket de table imprimé !");
   };
 
   const handleClearCart = () => {
@@ -182,37 +225,59 @@ export default function CafeCommandes() {
 
     setIsProcessing(true);
     try {
-      // 1. Calculer le sous-total
       const subTotal = cart.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0,
       );
 
-      // 2. Appliquer la remise globale
-      let finalTotal = subTotal;
+      let discountAmount = 0;
       if (discountType === "percent") {
-        finalTotal = subTotal - subTotal * (discountValue / 100);
+        discountAmount = subTotal * (discountValue / 100);
       } else if (discountType === "amount") {
-        finalTotal = Math.max(0, subTotal - discountValue);
+        discountAmount = discountValue;
       }
 
-      await api.post("/cafe/orders", {
+      const finalTotal = Math.max(0, subTotal - discountAmount);
+
+      const res = await api.post("/cafe/orders", {
         items: cart.map((item) => ({
           id: item.id,
           name: item.name,
           price: item.price,
           quantity: item.quantity,
         })),
-        totalPrice: finalTotal, // <--- ENVOYER LE PRIX AVEC REMISE
+        totalPrice: finalTotal,
         printReceipt: shouldPrint,
         ticketId: ticketId ? Number(ticketId) : null,
       });
 
-      // ... (vos messages de succès)
+      // --- 🖨️ IMPRIMER LE REÇU DE VENTE COMPTOIR ---
+      if (shouldPrint) {
+        setPrintType("receipt");
+        setPrintData({
+          ticketId: res.data.id,
+          clientName: "Client Comptoir",
+          items: cart.map((i) => ({
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+          })),
+          grandTotal: finalTotal,
+          discountAmount: discountAmount,
+          paidAmount: finalTotal,
+        });
+        setPrintTrigger((prev) => prev + 1); // Déclenche l'impression
+      }
+
+      if (shouldPrint) {
+        toast.success("Vente enregistrée ! Impression en cours...");
+      } else {
+        toast.success("Vente enregistrée en espèces !");
+      }
 
       setCart([]);
-      setDiscountType(null); // <--- RESET REMISE
-      setDiscountValue(0); // <--- RESET REMISE
+      setDiscountType(null);
+      setDiscountValue(0);
     } catch (error) {
       console.error(error);
       toast.error("Échec de l'enregistrement de la vente.");
@@ -367,6 +432,11 @@ export default function CafeCommandes() {
           </div>
         </div>
       </Modal>
+      <ThermalReceipt
+        type={printType}
+        data={printData}
+        printTrigger={printTrigger}
+      />
     </div>
   );
 }

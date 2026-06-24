@@ -14,6 +14,9 @@ import {
   AlertOctagon,
   Edit,
   Tag,
+  Sliders,
+  History,
+  Minus,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../../utils/api";
@@ -23,8 +26,10 @@ import DataTable from "../../../components/common/DataTable";
 import Modal from "../../../components/common/Modal";
 import Input from "../../../components/common/Input";
 import ColorfulStatCard from "../../../components/common/ColorfulStatCard";
+import { useAuth } from "../../../context/AuthContext";
 
 export default function CafeStock() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("inventory"); // 'inventory' or 'receptions'
   const [receptions, setReceptions] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -50,19 +55,30 @@ export default function CafeStock() {
 
   const [stockStats, setStockStats] = useState(null);
 
+  const [adjustments, setAdjustments] = useState([]);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [productToAdjust, setProductToAdjust] = useState(null);
+  const [adjustData, setAdjustData] = useState({
+    quantity: "",
+    reason: "Périmé / Jeté",
+    type: "minus",
+  });
+
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [recRes, supRes, catRes, statsRes] = await Promise.all([
+      const [recRes, supRes, catRes, statsRes, adjRes] = await Promise.all([
         api.get("/cafe/stock"),
         api.get("/cafe/suppliers"),
         api.get("/cafe/products"),
         api.get("/cafe/stock/stats"),
+        api.get("/cafe/stock/adjustments"), // <-- NOUVEL APPEL
       ]);
       setReceptions(recRes.data);
       setSuppliers(supRes.data);
       setCatalog(catRes.data);
       setStockStats(statsRes.data);
+      setAdjustments(adjRes.data); // <-- SAUVEGARDE DE L'HISTORIQUE
     } catch (err) {
       toast.error("Erreur de synchronisation");
     } finally {
@@ -325,33 +341,75 @@ export default function CafeStock() {
     setViewingBR({ ...reception, items: enrichedItems });
     setIsViewModalOpen(true);
   };
+  // --- ENREGISTRER UN AJUSTEMENT DE STOCK (PERTES / CORRECTION) ---
+  const handleSubmitAdjustment = async (e) => {
+    e.preventDefault();
+    const qty = parseInt(adjustData.quantity, 10);
+    if (isNaN(qty) || qty <= 0)
+      return toast.error("Veuillez saisir une quantité supérieure à 0.");
+    if (!adjustData.reason.trim())
+      return toast.error("Le motif d'ajustement est obligatoire.");
 
+    setIsSubmitting(true);
+    try {
+      // Si c'est un retrait (minus), on envoie une quantité négative au serveur !
+      const calculatedQty = adjustData.type === "minus" ? -qty : qty;
+
+      await api.post("/cafe/stock/adjust", {
+        productId: productToAdjust.id,
+        quantity: calculatedQty,
+        reason: adjustData.reason,
+        username: user?.username || "System", // Nom du caissier connecté
+      });
+
+      toast.success("Ajustement de stock enregistré avec succès !");
+      setIsAdjustModalOpen(false);
+      setProductToAdjust(null);
+      setAdjustData({ quantity: "", reason: "Périmé / Jeté", type: "minus" }); // Reset
+      loadData(); // Rafraîchir les tableaux et les stats réelles !
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Erreur d'ajustement.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   return (
     <div className="space-y-6">
       {/* NAVIGATION TABS (Boutons solides comme dans SalonManager) */}
-      <div className="flex gap-2 p-1 bg-surface border border-subtle w-fit">
+      <div className="flex border-b border-subtle bg-surface/50 -mt-8 -mx-8 px-8 mb-6">
         <button
           onClick={() => setActiveTab("inventory")}
-          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
+          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
             activeTab === "inventory"
-              ? "bg-brand text-white shadow-md"
-              : "text-t-muted hover:bg-main hover:text-t-main"
+              ? "border-b-2 border-brand text-brand bg-brand/5"
+              : "text-t-muted hover:text-t-main"
           }`}
         >
-          <Box className="w-5 h-5" /> État des Stocks
+          <Box size={16} /> État des Stocks
         </button>
         <button
           onClick={() => setActiveTab("receptions")}
-          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
+          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
             activeTab === "receptions"
-              ? "bg-brand text-white shadow-md"
-              : "text-t-muted hover:bg-main hover:text-t-main"
+              ? "border-b-2 border-brand text-brand bg-brand/5"
+              : "text-t-muted hover:text-t-main"
           }`}
         >
-          <ClipboardList className="w-5 h-5" /> Bons de Réception
+          <ClipboardList size={16} /> Bons de Réception
+        </button>
+
+        {/* --- NOUVEL ONGLET : HISTORIQUE DES PERTES --- */}
+        <button
+          onClick={() => setActiveTab("adjustments")}
+          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
+            activeTab === "adjustments"
+              ? "border-b-2 border-brand text-brand bg-brand/5"
+              : "text-t-muted hover:text-t-main"
+          }`}
+        >
+          <History size={16} /> Historique des Pertes
         </button>
       </div>
-
       {/* STATS ROW */}
       {stockStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -437,9 +495,10 @@ export default function CafeStock() {
             { label: "Référence" },
             { label: "Produit" },
             { label: "Catégorie" },
-            { label: "Colisage" },
+            { label: "NUC" },
             { label: "Stock Disponible" },
             { label: "Status" },
+            { label: "Actions", align: "right" },
           ]}
         >
           {catalog
@@ -492,10 +551,23 @@ export default function CafeStock() {
                     </span>
                   )}
                 </td>
+                <td className="px-6 py-4 text-right">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setProductToAdjust(p);
+                      setIsAdjustModalOpen(true);
+                    }}
+                    className="py-1 px-3 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white transition-colors"
+                    title="Ajuster manuellement le stock de ce produit (Perte, Casse, Inventaire)"
+                  >
+                    <Sliders size={14} className="mr-1" /> Ajuster
+                  </Button>
+                </td>
               </tr>
             ))}
         </DataTable>
-      ) : (
+      ) : activeTab === "inventory" ? (
         <DataTable
           headers={[
             { label: "Date" },
@@ -610,6 +682,64 @@ export default function CafeStock() {
                       <Trash2 size={16} /> Archiver
                     </Button>
                   )}
+                </td>
+              </tr>
+            ))
+          )}
+        </DataTable>
+      ) : (
+        // --- NOUVEAU TABLEAU : JOURNAL DES PERTES / AJUSTEMENTS ---
+        <DataTable
+          headers={[
+            { label: "Date de l'opération" },
+            { label: "Produit" },
+            { label: "Ajustement (Qté)" },
+            { label: "Motif / Raison" },
+            { label: "Opérateur" },
+          ]}
+        >
+          {adjustments.length === 0 ? (
+            <tr>
+              <td
+                colSpan="5"
+                className="text-center py-12 text-t-muted border border-subtle border-dashed bg-surface font-bold text-lg"
+              >
+                Aucun ajustement enregistré.
+              </td>
+            </tr>
+          ) : (
+            adjustments.map((adj) => (
+              <tr
+                key={adj.id}
+                className="border-b border-subtle hover:bg-brand/5 transition-colors"
+              >
+                <td className="px-6 py-4 text-xs font-mono font-bold text-t-muted">
+                  {new Date(adj.createdAt).toLocaleDateString("fr-FR")} à{" "}
+                  {new Date(adj.createdAt).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </td>
+                <td className="px-6 py-4 font-bold text-t-main text-sm uppercase">
+                  {adj.product?.name}
+                </td>
+                <td className="px-6 py-4">
+                  <span
+                    className={`inline-block px-3 py-1 font-mono font-bold text-xs border rounded-none shadow-sm ${
+                      adj.quantity < 0
+                        ? "bg-red-500/10 text-red-500 border-red-500/20"
+                        : "bg-green-500/10 text-green-500 border-green-500/20"
+                    }`}
+                  >
+                    {adj.quantity > 0 ? "+" : ""}
+                    {adj.quantity} unités
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-xs text-t-muted font-bold uppercase">
+                  {adj.reason}
+                </td>
+                <td className="px-6 py-4 text-xs font-bold text-t-main uppercase">
+                  {adj.adjustedBy}
                 </td>
               </tr>
             ))
@@ -958,6 +1088,137 @@ export default function CafeStock() {
             </div>
           </div>
         </div>
+      </Modal>
+      {/* --- MODAL 3 : ENREGISTRER UN AJUSTEMENT DE STOCK --- */}
+      <Modal
+        isOpen={isAdjustModalOpen}
+        onClose={() => !isSubmitting && setIsAdjustModalOpen(false)}
+      >
+        {productToAdjust && (
+          <form onSubmit={handleSubmitAdjustment} className="p-8">
+            <h3 className="text-xl font-serif font-bold text-brand uppercase border-b border-subtle pb-4 mb-6">
+              Ajustement Manuel d'Inventaire
+            </h3>
+
+            <div className="bg-main border border-subtle p-4 mb-6 flex justify-between items-center shadow-inner">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-t-muted">
+                  Produit à ajuster
+                </p>
+                <p className="font-bold text-t-main uppercase text-sm">
+                  {productToAdjust.name}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase font-bold text-t-muted">
+                  Stock Actuel
+                </p>
+                <p className="font-mono font-bold text-lg text-brand">
+                  {productToAdjust.stock} unités
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Type d'opération (Boutons solides + haptiques tactiles) */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
+                  Type d'ajustement
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={adjustData.type === "minus" ? "danger" : "outline"}
+                    onClick={() =>
+                      setAdjustData({ ...adjustData, type: "minus" })
+                    }
+                    className="flex-1 py-3"
+                  >
+                    <Minus size={14} className="mr-1" /> Retrait (Perte / Casse
+                    / Usage)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={adjustData.type === "plus" ? "success" : "outline"}
+                    onClick={() =>
+                      setAdjustData({ ...adjustData, type: "plus" })
+                    }
+                    className="flex-1 py-3"
+                  >
+                    <Plus size={14} className="mr-1" /> Ajout (Inventaire
+                    correction)
+                  </Button>
+                </div>
+              </div>
+
+              {/* Quantité d'unités */}
+              <Input
+                label="Nombre d'unités réelles à ajuster *"
+                type="number"
+                min="1"
+                value={adjustData.quantity}
+                onChange={(e) =>
+                  setAdjustData({ ...adjustData, quantity: e.target.value })
+                }
+                required
+                placeholder="Ex: 5"
+                autoFocus
+              />
+
+              {/* Motif de l'ajustement */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
+                  Motif de l'ajustement *
+                </label>
+                <select
+                  value={adjustData.reason}
+                  onChange={(e) =>
+                    setAdjustData({ ...adjustData, reason: e.target.value })
+                  }
+                  className="w-full bg-main border border-subtle text-t-main px-4 py-3 focus:outline-none focus:border-brand font-bold text-xs uppercase"
+                  required
+                >
+                  <option value="Périmé / Jeté">
+                    Périmé / Jeté (DLC courte)
+                  </option>
+                  <option value="Casse / Verre brisé">
+                    Casse / Bouteille brisée
+                  </option>
+                  <option value="Consommation interne (Staff)">
+                    Consommation interne (Barista / Staff)
+                  </option>
+                  <option value="Consommation interne (Bar/Service)">
+                    Consommation Bar (Gobelets, Sucres, Pailles)
+                  </option>
+                  <option value="Correction d'inventaire physique">
+                    Correction de comptage d'inventaire
+                  </option>
+                </select>
+              </div>
+
+              {/* Pied de la modale */}
+              <div className="grid grid-cols-2 gap-4 pt-6 mt-6 border-t border-subtle">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setIsAdjustModalOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  variant={adjustData.type === "minus" ? "danger" : "success"}
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? "Enregistrement..."
+                    : "Confirmer l'Ajustement"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

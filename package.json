@@ -27,6 +27,7 @@
     "react-hot-toast": "^2.6.0",
     "react-is": "^19.2.0",
     "react-router-dom": "latest",
+    "react-simple-keyboard": "^3.8.224",
     "recharts": "latest",
     "sass": "latest",
     "sass-embedded": "latest",

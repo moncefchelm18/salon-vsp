@@ -84,3 +84,43 @@ html.theme-cafe {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--theme-brand, #d4af37);
 }
+/* ======================================================================
+   IMPRESSION THERMIQUE (XPRINTER 80mm)
+   ====================================================================== */
+
+/* Cacher le ticket sur l'écran normal */
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Cacher TOUT le site web */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Afficher UNIQUEMENT le bloc d'impression */
+  .print-only,
+  .print-only * {
+    visibility: visible;
+  }
+
+  .print-only {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm; /* Format Xprinter Standard */
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+    font-family: monospace; /* Police de caisse classique */
+  }
+
+  /* Supprimer les marges par défaut du navigateur */
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+}

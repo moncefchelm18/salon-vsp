@@ -24,10 +24,15 @@ export default function Login() {
         // Redirection iPad globale
         navigate("/coiffeur");
       } else if (result.role === "barber") {
-        // --- NOUVEAU REDIRECT DIRECT INDIVIDUEL ---
-        // Le Backend doit envoyer l'id du barbier lié dans result.user.barberId
-        const barberId = result.user?.barberId || 1;
-        navigate(`/coiffeur/salle/${barberId}`);
+        console.log(result.user);
+        const barberId = result.user?.barberId;
+        if (!barberId) {
+          toast.error(
+            "Erreur de synchronisation : Fiche coiffeur introuvable.",
+          );
+        } else {
+          navigate(`/coiffeur/salle/${barberId}`);
+        }
       } else if (result.role === "cafe_staff") {
         navigate("/administration/cafe/commandes");
       } else {

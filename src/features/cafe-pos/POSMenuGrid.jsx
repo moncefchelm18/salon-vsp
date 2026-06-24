@@ -1,36 +1,30 @@
 import React from "react";
+import { AlertTriangle } from "lucide-react"; // <-- Nouvel import
 
-// Palette de couleurs : "active" pour quand c'est sélectionné, "inactive" pour guider l'œil au repos
 const CATEGORY_COLORS = [
   {
-    active: "border-blue-500 text-blue-600 bg-blue-500/10",
-    inactive:
-      "border-blue-500/30 text-blue-600/70 hover:bg-blue-500/5 hover:text-blue-600",
+    base: "text-blue-600 bg-blue-500/10 border-blue-500/20",
+    active: "bg-blue-600 text-white border-blue-600 shadow-md",
   },
   {
-    active: "border-rose-500 text-rose-600 bg-rose-500/10",
-    inactive:
-      "border-rose-500/30 text-rose-600/70 hover:bg-rose-500/5 hover:text-rose-600",
+    base: "text-rose-600 bg-rose-500/10 border-rose-500/20",
+    active: "bg-rose-600 text-white border-rose-600 shadow-md",
   },
   {
-    active: "border-emerald-500 text-emerald-600 bg-emerald-500/10",
-    inactive:
-      "border-emerald-500/30 text-emerald-600/70 hover:bg-emerald-500/5 hover:text-emerald-600",
+    base: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20",
+    active: "bg-emerald-600 text-white border-emerald-600 shadow-md",
   },
   {
-    active: "border-amber-500 text-amber-600 bg-amber-500/10",
-    inactive:
-      "border-amber-500/30 text-amber-600/70 hover:bg-amber-500/5 hover:text-amber-600",
+    base: "text-amber-600 bg-amber-500/10 border-amber-500/20",
+    active: "bg-amber-500 text-white border-amber-500 shadow-md",
   },
   {
-    active: "border-purple-500 text-purple-600 bg-purple-500/10",
-    inactive:
-      "border-purple-500/30 text-purple-600/70 hover:bg-purple-500/5 hover:text-purple-600",
+    base: "text-purple-600 bg-purple-500/10 border-purple-500/20",
+    active: "bg-purple-600 text-white border-purple-600 shadow-md",
   },
   {
-    active: "border-cyan-500 text-cyan-600 bg-cyan-500/10",
-    inactive:
-      "border-cyan-500/30 text-cyan-600/70 hover:bg-cyan-500/5 hover:text-cyan-600",
+    base: "text-cyan-600 bg-cyan-500/10 border-cyan-500/20",
+    active: "bg-cyan-600 text-white border-cyan-600 shadow-md",
   },
 ];
 
@@ -40,16 +34,14 @@ export default function POSMenuGrid({
   setActiveCategory,
   onAddProduct,
 }) {
-  // Find products for the currently selected category
   const activeProducts =
     categories.find((c) => c.id === activeCategory)?.products || [];
 
   return (
     <div className="flex flex-col h-full bg-main">
-      {/* CATEGORY TABS (Scrollable horizontally) */}
-      <div className="flex overflow-x-auto border-b border-subtle bg-surface shrink-0 hide-scrollbar shadow-sm">
+      {/* CATEGORY TABS */}
+      <div className="flex overflow-x-auto border-b border-subtle bg-surface p-3 gap-2 shrink-0 hide-scrollbar shadow-sm">
         {categories.map((cat, index) => {
-          // On assigne une couleur unique basée sur la position de la catégorie
           const colorTheme = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
           const isActive = activeCategory === cat.id;
 
@@ -57,8 +49,8 @@ export default function POSMenuGrid({
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-8 py-5 whitespace-nowrap font-bold uppercase tracking-widest text-xs transition-all duration-200 border-b-4 ${
-                isActive ? colorTheme.active : colorTheme.inactive
+              className={`px-6 py-3 whitespace-nowrap font-bold uppercase tracking-widest text-xs transition-all duration-200 border ${
+                isActive ? colorTheme.active : colorTheme.base
               }`}
             >
               {cat.name}
@@ -67,36 +59,78 @@ export default function POSMenuGrid({
         })}
       </div>
 
-      {/* PRODUCTS GRID (Scrollable vertically) */}
+      {/* PRODUCTS GRID */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {activeProducts.map((product) => (
-            <button
-              key={product.id}
-              onClick={() => onAddProduct(product)}
-              className="bg-surface border border-subtle hover:border-brand hover:shadow-lg flex flex-col items-center p-4 transition-all active:scale-95 shadow-sm group"
-            >
-              <div className="w-full aspect-square bg-main border border-subtle mb-4 p-2 flex justify-center items-center group-hover:border-brand/50 transition-colors">
-                {product.image ? (
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <span className="text-t-muted font-bold text-xs uppercase opacity-50">
-                    Sans Image
-                  </span>
+          {activeProducts.map((product) => {
+            // --- LOGIQUE D'ALERTE STOCK ---
+            // On vérifie si c'est un produit physique suivi et s'il est à zéro ou moins
+            const isOutOfStock = product.isTracked && product.stock <= 0;
+
+            return (
+              <button
+                key={product.id}
+                onClick={() => onAddProduct(product)}
+                // Si hors stock, on ajoute un filtre rouge/grisé léger pour alerter l'œil, mais ça reste cliquable !
+                className={`bg-surface border flex flex-col items-center p-4 transition-all active:scale-95 shadow-sm group relative overflow-hidden ${
+                  isOutOfStock
+                    ? "border-red-500/50 hover:border-red-500 bg-red-500/5"
+                    : "border-subtle hover:border-brand hover:shadow-lg"
+                }`}
+              >
+                {/* Badge Hors Stock visuel */}
+                {isOutOfStock && (
+                  <div className="absolute top-0 w-full bg-red-600 text-white text-[9px] font-bold uppercase tracking-widest py-1 flex justify-center items-center gap-1 shadow-md z-10">
+                    <AlertTriangle size={10} /> Stock : {product.stock}
+                  </div>
                 )}
-              </div>
-              <h3 className="font-bold text-t-main text-sm text-center leading-tight mb-2 uppercase tracking-wide group-hover:text-brand transition-colors">
-                {product.name}
-              </h3>
-              <p className="bg-main border border-subtle w-full text-center py-2 text-brand font-mono font-bold text-lg mt-auto">
-                {product.price.toFixed(2)} DA
-              </p>
-            </button>
-          ))}
+
+                <div
+                  className={`w-full aspect-square bg-main border mb-4 p-2 flex justify-center items-center transition-colors ${
+                    isOutOfStock
+                      ? "border-red-500/30 opacity-60"
+                      : "border-subtle group-hover:border-brand/50"
+                  }`}
+                >
+                  {product.image ? (
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className={`w-full h-full object-cover transition-opacity ${
+                        isOutOfStock
+                          ? "grayscale opacity-80"
+                          : "opacity-90 group-hover:opacity-100"
+                      }`}
+                    />
+                  ) : (
+                    <span className="text-t-muted font-bold text-xs uppercase opacity-50">
+                      Sans Image
+                    </span>
+                  )}
+                </div>
+
+                <h3
+                  className={`font-bold text-sm text-center leading-tight mb-2 uppercase tracking-wide transition-colors ${
+                    isOutOfStock
+                      ? "text-red-400"
+                      : "text-t-main group-hover:text-brand"
+                  }`}
+                >
+                  {product.name}
+                </h3>
+
+                <p
+                  className={`border w-full text-center py-2 font-mono font-bold text-lg mt-auto ${
+                    isOutOfStock
+                      ? "bg-red-950/20 border-red-500/30 text-red-500"
+                      : "bg-main border-subtle text-brand"
+                  }`}
+                >
+                  {product.price.toFixed(2)} DA
+                </p>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

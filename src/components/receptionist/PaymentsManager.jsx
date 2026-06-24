@@ -10,6 +10,7 @@ import PaymentsQueue from "./payments/PaymentsQueue";
 import PaymentsHistory from "./payments/PaymentsHistory";
 import CheckoutModal from "./payments/CheckoutModal";
 import TicketReceiptModal from "./payments/TicketReceiptModal";
+import ThermalReceipt from "../common/ThermalReceipt"; // <-- NOUVEL IMPORT
 
 export default function PaymentsManager() {
   const [tickets, setTickets] = useState([]);
@@ -59,6 +60,10 @@ export default function PaymentsManager() {
   const [manualService, setManualService] = useState(null);
   const [manualClientName, setManualClientName] = useState("Client de passage");
   const [manualPhone, setManualPhone] = useState("");
+
+  // --- PRINT STATES ---
+  const [printData, setPrintData] = useState(null);
+  const [printTrigger, setPrintTrigger] = useState(0);
 
   const loadData = async () => {
     try {
@@ -243,12 +248,15 @@ export default function PaymentsManager() {
 
   const handleConfirmPayment = async () => {
     if (!ticketToPay) return;
+
+    // Validation préalable si encaissement manuel
     if (ticketToPay.id === 0) {
       if (!manualBarberId)
         return toast.error("Veuillez sélectionner un coiffeur.");
       if (!manualService)
         return toast.error("Veuillez sélectionner une prestation.");
     }
+
     setIsProcessing(true);
     try {
       const existingCafeTotal =
@@ -260,8 +268,9 @@ export default function PaymentsManager() {
         (sum, item) => sum + item.price * item.quantity,
         0,
       );
-      const subTotal = priceToPay + existingCafeTotal + directDrinksTotal;
 
+      // Calcul de la prestation coupe nette après remise
+      const subTotal = priceToPay + existingCafeTotal + directDrinksTotal;
       let discountAmount = 0;
       if (discountType === "percent")
         discountAmount = subTotal * (discountValue / 100);
@@ -288,6 +297,7 @@ export default function PaymentsManager() {
       };
 
       if (ticketToPay.id === 0) {
+        // --- 1. APPEL API ENCAISSEMENT DIRECT ---
         await api.post("/tickets/manual-pay", {
           ...payload,
           clientName: manualClientName,
@@ -296,8 +306,54 @@ export default function PaymentsManager() {
           serviceName: manualService.name,
         });
       } else {
+        // --- 2. APPEL API CLASSIQUE (FILE D'ATTENTE) ---
         await api.patch(`/tickets/${ticketToPay.id}/pay`, payload);
       }
+
+      // ═══════════════════════════════════════════════════════
+      // --- 🖨️ COMPILER ET DÉCLENCHER L'IMPRESSION (AJOUT) ---
+      // ═══════════════════════════════════════════════════════
+      const compiledCafeItems = [];
+      ticketToPay.cafeOrders?.forEach((order) => {
+        order.items?.forEach((item) => {
+          compiledCafeItems.push({
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+          });
+        });
+      });
+      addedCafeItems.forEach((item) => {
+        compiledCafeItems.push({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        });
+      });
+
+      const activeBarberName =
+        ticketToPay.id === 0
+          ? barbers.find((b) => b.id.toString() === manualBarberId)?.name
+          : ticketToPay.barber;
+
+      // Envoyer les données formatées à l'imprimante thermique
+      setPrintData({
+        ticketId: ticketToPay.id === 0 ? "COMPTOIR" : ticketToPay.id,
+        clientName:
+          ticketToPay.id === 0 ? manualClientName : ticketToPay.clientName,
+        barber: activeBarberName,
+        service:
+          ticketToPay.id === 0 ? manualService.name : ticketToPay.service,
+        haircutPrice: finalHaircutPrice,
+        items: compiledCafeItems,
+        discountAmount: discountAmount,
+        tipAmount: tipAmount,
+        paidAmount: actualPaid,
+        unpaidDebt: Math.max(0, finalGrandTotalWithoutTip - actualPaid),
+        grandTotal: calculatedGrandTotal,
+      });
+
+      setPrintTrigger((prev) => prev + 1); // <-- FORCE L'IMPRESSION EN DIRECT
 
       toast.success(
         `Encaissement de DZD ${calculatedGrandTotal.toFixed(2)} validé !`,
@@ -306,7 +362,9 @@ export default function PaymentsManager() {
       setTicketToPay(null);
       loadData();
     } catch (error) {
-      toast.error(error.response?.data?.message || "Erreur d'encaissement.");
+      toast.error(
+        error.response?.data?.message || "Erreur lors de l'encaissement.",
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -485,6 +543,13 @@ export default function PaymentsManager() {
         isOpen={showViewModal}
         onClose={() => setShowViewModal(false)}
         ticketToView={ticketToView}
+      />
+
+      {/* --- COMPOSANT D'IMPRESSION REÇU DE CAISSE (INVISIBLE) --- */}
+      <ThermalReceipt
+        type="receipt"
+        data={printData}
+        printTrigger={printTrigger}
       />
     </div>
   );
