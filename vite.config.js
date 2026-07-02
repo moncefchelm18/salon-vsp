@@ -8,4 +8,5 @@ export default defineConfig({
     host: "0.0.0.0", // This exposes the app to your local network
     port: 3001, // Kept it 3001 since that is what you were using
   },
+  base: "./", // This ensures that the app can be served from any path
 });

@@ -73,10 +73,27 @@ export default function SettingsView() {
   };
 
   const handleBackupDb = () => {
-    // Dans le futur, cette route lancera le téléchargement du fichier dev.db
-    alert(
-      "Simulation : Téléchargement du fichier de secours (picasso_backup.db)...",
-    );
+    try {
+      // Pour forcer le téléchargement sans que l'API intercept de React ne le bloque (comme s'il attendait du JSON),
+      // nous ouvrons directement l'URL complète dans le navigateur.
+      // Cela fera apparaître la boîte "Enregistrer sous..." classique du PC.
+
+      const API_BASE_URL =
+        import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const downloadUrl = `${API_BASE_URL}/settings/backup`;
+
+      // Crée un lien invisible, clique dessus, puis le détruit
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", "true"); // Demande au navigateur de télécharger
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success("Téléchargement du Backup initié.");
+    } catch (error) {
+      toast.error("Erreur lors de la création de la sauvegarde.");
+    }
   };
 
   const handleRefreshHardware = () => {

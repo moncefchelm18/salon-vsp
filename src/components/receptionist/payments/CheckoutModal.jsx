@@ -6,8 +6,12 @@ import {
   Trash2,
   Minus,
   RefreshCcw,
+  CreditCard,
+  Clock,
+  UserPlus,
 } from "lucide-react";
 import Modal from "../../common/Modal";
+import Button from "../../common/Button";
 import POSMenuGrid from "../../../features/cafe-pos/POSMenuGrid";
 import VirtualNumpad from "../../../features/cafe-pos/VirtualNumpad";
 
@@ -38,6 +42,8 @@ export default function CheckoutModal({
   handleOpenNumpad,
   tipAmount,
   setTipAmount,
+
+  // --- PROPS CRÉDIT CLIENT (OPTION B) ---
   isPartialPayment,
   setIsPartialPayment,
   setPaidAmountInput,
@@ -52,9 +58,11 @@ export default function CheckoutModal({
   setNewClientPhone,
   handleQuickCreateClient,
   paidAmountInput,
+
   calculatedGrandTotal,
   handleConfirmPayment,
-  // Sous-modales :
+
+  // Sous-modales du checkout
   showPOSModal,
   setShowPOSModal,
   cafeCategories,
@@ -83,8 +91,8 @@ export default function CheckoutModal({
             </div>
           )}
 
-          {/* ── MODAL HEADER (fixed) ── */}
-          <div className="border-b-2 border-amber-500 px-6 py-5 shrink-0 bg-slate-950">
+          {/* ── MODAL HEADER ── */}
+          <div className="border-b-2 border-amber-500 px-6 py-5 shrink-0 bg-slate-900">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
                 <DollarSign className="h-5 w-5 text-amber-500" />
@@ -94,22 +102,26 @@ export default function CheckoutModal({
                   Validation Encaissement
                 </h3>
                 <p className="text-[10px] text-slate-500 font-mono mt-0.5 uppercase tracking-wider">
-                  Ticket N°{ticketToPay.id} — {ticketToPay.clientName}
+                  Ticket N°{ticketToPay.id === 0 ? "COMPTOIR" : ticketToPay.id}{" "}
+                  —{" "}
+                  {ticketToPay.id === 0
+                    ? manualClientName
+                    : ticketToPay.clientName}
                 </p>
               </div>
             </div>
           </div>
 
           {/* ── SCROLLABLE BODY ── */}
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 overflow-y-auto overscroll-contain bg-slate-950">
             <div className="p-6 space-y-5">
               {/* ── BLOC 1 : DÉTAIL FACTURE ── */}
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 px-1">
+                <p className="text-xs font-bold text-slate-400 mb-2 px-1">
                   Récapitulatif Facture
                 </p>
-                <div className="border border-slate-800 bg-slate-900/60">
-                  {/* Prestation coiffure (Saisie manuelle si ID = 0, sinon Lecture seule) */}
+                <div className="border border-slate-800 bg-slate-900/40 shadow-inner">
+                  {/* Prestation coiffure dynamique (Saisie manuelle si ID = 0, sinon Lecture seule) */}
                   {ticketToPay.id === 0 ? (
                     <div className="px-4 py-4 border-b border-slate-800/60 space-y-4 bg-slate-950/40">
                       <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">
@@ -129,7 +141,10 @@ export default function CheckoutModal({
                             <option value="">-- Choisir --</option>
                             {barbers.map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.name}
+                                {b.name}{" "}
+                                {b.poste
+                                  ? `(Poste ${b.poste})`
+                                  : "(Sans Poste)"}
                               </option>
                             ))}
                           </select>
@@ -194,7 +209,7 @@ export default function CheckoutModal({
                         <p className="text-xs font-bold text-slate-200 uppercase tracking-wide">
                           {ticketToPay.clientName}
                         </p>
-                        <p className="text-[9px] text-slate-500 uppercase font-mono mt-0.5">
+                        <p className="text-[10px] text-slate-500 uppercase font-mono mt-0.5">
                           Coiffure — {ticketToPay.barber}
                         </p>
                       </div>
@@ -204,16 +219,17 @@ export default function CheckoutModal({
                     </div>
                   )}
 
+                  {/* Commandes Café existantes (via POS) */}
                   {ticketToPay.cafeOrders?.map((order) => (
                     <div
                       key={order.id}
                       className="flex justify-between items-center px-4 py-3 border-b border-slate-800/60"
                     >
                       <div>
-                        <p className="text-[10px] font-bold uppercase text-amber-500/80 flex items-center gap-1.5">
-                          <Coffee size={10} /> Café (POS)
+                        <p className="text-xs font-bold uppercase text-amber-500/80 flex items-center gap-1.5">
+                          <Coffee size={12} /> Café (POS)
                         </p>
-                        <p className="text-[9px] text-slate-500 font-mono mt-0.5">
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                           {order.items
                             ?.map((i) => `${i.quantity}× ${i.name}`)
                             .join(" • ")}
@@ -225,19 +241,20 @@ export default function CheckoutModal({
                     </div>
                   ))}
 
+                  {/* Articles Café ajoutés directement */}
                   {addedCafeItems.map((item) => (
                     <div
                       key={item.id}
                       className="flex justify-between items-center px-4 py-3 border-b border-slate-800/60"
                     >
                       <div>
-                        <p className="text-[10px] font-bold uppercase text-green-400 flex items-center gap-1.5">
-                          <Coffee size={10} /> {item.name}
+                        <p className="text-xs font-bold uppercase text-green-400 flex items-center gap-1.5">
+                          <Coffee size={12} /> {item.name}
                           <span className="text-slate-600 font-mono text-[9px] normal-case">
                             (ajout direct)
                           </span>
                         </p>
-                        <p className="text-[9px] text-slate-500 font-mono mt-0.5">
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                           DZD {item.price.toFixed(2)} / unité
                         </p>
                       </div>
@@ -245,39 +262,42 @@ export default function CheckoutModal({
                         <span className="font-mono font-bold text-sm text-green-400 w-24 text-right">
                           DZD {(item.price * item.quantity).toFixed(2)}
                         </span>
+
+                        {/* Contrôles de quantité solides */}
                         <div className="flex items-center border border-slate-700 bg-slate-900 shrink-0">
                           <button
                             onClick={() =>
                               handleUpdateCafeItemQuantity(item.id, -1)
                             }
-                            className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                           >
                             {item.quantity === 1 ? (
-                              <Trash2 size={11} className="text-red-500" />
+                              <Trash2 size={14} className="text-red-500" />
                             ) : (
-                              <Minus size={11} />
+                              <Minus size={14} />
                             )}
                           </button>
-                          <span className="w-7 text-center text-[10px] font-bold text-white font-mono border-x border-slate-700">
+                          <span className="w-8 text-center text-xs font-bold text-white font-mono border-x border-slate-700">
                             {item.quantity}
                           </span>
                           <button
                             onClick={() =>
                               handleUpdateCafeItemQuantity(item.id, 1)
                             }
-                            className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                           >
-                            <Plus size={11} />
+                            <Plus size={14} />
                           </button>
                         </div>
                       </div>
                     </div>
                   ))}
 
+                  {/* Remise appliquée */}
                   {discountType && (
                     <div className="flex justify-between items-center px-4 py-3 bg-amber-500/5 border-b border-amber-500/20">
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-amber-500">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500">
                           Remise{" "}
                           {discountType === "percent"
                             ? `(${discountValue}%)`
@@ -290,7 +310,7 @@ export default function CheckoutModal({
                           }}
                           className="text-red-600 hover:text-red-400 transition-colors"
                         >
-                          <Trash2 size={11} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                       <span className="font-mono font-bold text-sm text-amber-500">
@@ -301,13 +321,14 @@ export default function CheckoutModal({
                     </div>
                   )}
 
-                  <div className="px-4 py-3">
+                  {/* Add Café button */}
+                  <div className="px-4 py-3 bg-slate-900/60">
                     <button
                       onClick={() => setShowPOSModal(true)}
-                      className="w-full border border-dashed border-slate-700 hover:border-amber-500/50 hover:bg-amber-500/5 active:scale-[0.99] text-slate-500 hover:text-amber-500 transition-all py-3 flex items-center justify-center gap-2"
+                      className="w-full border border-dashed border-slate-700 hover:border-amber-500/50 hover:bg-amber-500/5 active:scale-[0.99] text-slate-500 hover:text-amber-500 transition-all py-3 flex items-center justify-center gap-2 font-bold"
                     >
                       <Coffee size={14} />
-                      <span className="text-[9px] uppercase tracking-widest font-bold">
+                      <span className="text-xs uppercase tracking-widest">
                         Ajouter Consommations Café
                       </span>
                     </button>
@@ -315,21 +336,21 @@ export default function CheckoutModal({
                 </div>
               </div>
 
-              {/* ── BLOC 2 : REMISES ── */}
+              {/* ── BLOC 2 : REMISES (SOLIDES) ── */}
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 px-1">
+                <p className="text-xs font-bold uppercase text-slate-400 mb-2 px-1">
                   Appliquer une Remise
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleOpenNumpad("discount-percent")}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-[10px] font-bold uppercase tracking-widest shadow-md rounded-none"
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-xs font-bold uppercase tracking-widest shadow-md rounded-none"
                   >
                     Remise %
                   </button>
                   <button
                     onClick={() => handleOpenNumpad("discount-amount")}
-                    className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 active:scale-95 transition-all text-white text-[10px] font-bold uppercase tracking-widest shadow-md rounded-none"
+                    className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 active:scale-95 transition-all text-white text-xs font-bold uppercase tracking-widest shadow-md rounded-none"
                   >
                     Remise DZD
                   </button>
@@ -341,21 +362,27 @@ export default function CheckoutModal({
                       }}
                       className="px-4 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-md"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* ── BLOC 3 : POURBOIRE ── */}
+              {/* ── BLOC 3 : POURBOIRE (VISUEL TACTILE) ── */}
               <div>
                 <div className="flex justify-between items-center mb-2 px-1">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">
+                  <p className="text-xs font-bold uppercase text-slate-400">
                     Pourboire pour{" "}
-                    <span className="text-slate-400">{ticketToPay.barber}</span>
+                    <span className="text-brand">
+                      {ticketToPay.barber || manualBarberId
+                        ? barbers.find(
+                            (b) => b.id.toString() === manualBarberId,
+                          )?.name
+                        : "Coiffeur"}
+                    </span>
                   </p>
                   {tipAmount > 0 && (
-                    <span className="font-mono font-bold text-green-400 text-xs">
+                    <span className="font-mono font-bold text-green-400 text-sm">
                       + DZD {tipAmount.toFixed(2)}
                     </span>
                   )}
@@ -363,19 +390,19 @@ export default function CheckoutModal({
                 <div className="flex gap-2">
                   <button
                     onClick={() => setTipAmount((prev) => prev + 100)}
-                    className="flex-1 py-3 bg-green-600/10 text-green-500 border border-green-500/20 hover:bg-green-600 hover:text-white active:scale-95 transition-all text-[10px] uppercase font-bold tracking-widest"
+                    className="flex-1 py-3 bg-green-600/10 text-green-500 border border-green-500/20 hover:bg-green-600 hover:text-white active:scale-95 transition-all text-xs font-bold"
                   >
-                    +100
+                    +100 DA
                   </button>
                   <button
                     onClick={() => setTipAmount((prev) => prev + 200)}
-                    className="flex-1 py-3 bg-green-600/10 text-green-500 border border-green-500/20 hover:bg-green-600 hover:text-white active:scale-95 transition-all text-[10px] uppercase font-bold tracking-widest"
+                    className="flex-1 py-3 bg-green-600/10 text-green-500 border border-green-500/20 hover:bg-green-600 hover:text-white active:scale-95 transition-all text-xs font-bold"
                   >
-                    +200
+                    +200 DA
                   </button>
                   <button
                     onClick={() => handleOpenNumpad("tip")}
-                    className="flex-1 py-3 bg-slate-800 text-slate-300 hover:bg-slate-700 active:scale-95 transition-all text-[10px] uppercase font-bold tracking-widest"
+                    className="flex-1 py-3 bg-slate-800 text-slate-300 hover:bg-slate-700 active:scale-95 transition-all text-xs font-bold"
                   >
                     Autre
                   </button>
@@ -384,20 +411,20 @@ export default function CheckoutModal({
                       onClick={() => setTipAmount(0)}
                       className="px-4 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-md"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* ── BLOC 4 : ARDOISE / PAIEMENT PARTIEL ── */}
+              {/* ── BLOC 4 : ARDOISE / PAIEMENT PARTIEL (OPTION B) ── */}
               <div className="border border-slate-800 bg-slate-900/40">
-                <div className="flex items-center justify-between px-4 py-3.5">
+                <div className="flex items-center justify-between px-4 py-4">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
-                      Mettre sur Ardoise
+                    <p className="text-sm font-bold uppercase text-slate-300">
+                      Mettre sur Ardoise (Crédit)
                     </p>
-                    <p className="text-[9px] text-slate-600 uppercase tracking-wider mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       Enregistrer une dette client
                     </p>
                   </div>
@@ -419,7 +446,7 @@ export default function CheckoutModal({
                   <div className="border-t border-slate-800 px-4 pb-4 pt-4 space-y-4">
                     <div className="bg-slate-950 border border-slate-800 p-3">
                       <div className="flex justify-between items-center mb-3">
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                        <span className="text-xs font-bold uppercase text-slate-500">
                           Compte Client *
                         </span>
                         <button
@@ -427,13 +454,13 @@ export default function CheckoutModal({
                           onClick={() =>
                             setIsCreatingNewClient(!isCreatingNewClient)
                           }
-                          className="text-[9px] font-bold uppercase tracking-widest text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
+                          className="text-xs font-bold uppercase text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1"
                         >
                           {isCreatingNewClient ? (
                             "← Choisir Existant"
                           ) : (
                             <>
-                              <Plus size={9} /> Nouveau Client
+                              <Plus size={10} /> Nouveau Client
                             </>
                           )}
                         </button>
@@ -443,7 +470,7 @@ export default function CheckoutModal({
                         <select
                           value={selectedClientId}
                           onChange={(e) => setSelectedClientId(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2.5 focus:outline-none focus:border-amber-500 transition-colors text-[10px] font-bold uppercase tracking-wide rounded-none"
+                          className="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2.5 focus:outline-none focus:border-amber-500 transition-colors text-xs font-bold uppercase rounded-none"
                         >
                           <option value="">— Sélectionner un client —</option>
                           {registeredClients.map((c) => (
@@ -459,20 +486,20 @@ export default function CheckoutModal({
                             placeholder="Nom Complet *"
                             value={newClientName}
                             onChange={(e) => setNewClientName(e.target.value)}
-                            className="w-full bg-slate-900 border border-amber-500/40 text-amber-400 px-3 py-2.5 focus:outline-none focus:border-amber-400 transition-colors text-[10px] font-bold uppercase placeholder:text-slate-700 rounded-none"
+                            className="w-full bg-slate-900 border border-amber-500/40 text-amber-400 px-3 py-2.5 focus:outline-none focus:border-amber-400 transition-colors text-xs font-bold uppercase placeholder:text-slate-600 rounded-none"
                           />
                           <input
                             type="text"
                             placeholder="Téléphone (Optionnel)"
                             value={newClientPhone}
                             onChange={(e) => setNewClientPhone(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 text-slate-300 px-3 py-2.5 focus:outline-none focus:border-amber-500 transition-colors text-[10px] font-mono placeholder:text-slate-700 rounded-none"
+                            className="w-full bg-slate-900 border border-slate-700 text-slate-300 px-3 py-2.5 focus:outline-none focus:border-amber-500 transition-colors text-xs font-mono placeholder:text-slate-600 rounded-none"
                           />
                           <button
                             type="button"
                             onClick={handleQuickCreateClient}
                             disabled={isProcessing || !newClientName.trim()}
-                            className="w-full py-3 bg-blue-600 hover:bg-blue-500 active:scale-[0.99] transition-all text-[9px] uppercase font-bold tracking-widest disabled:opacity-40 text-white rounded-none shadow-md"
+                            className="w-full py-3 bg-blue-600 hover:bg-blue-500 active:scale-[0.99] transition-all text-xs font-bold uppercase disabled:opacity-40 text-white rounded-none shadow-md"
                           >
                             Enregistrer & Sélectionner
                           </button>
@@ -480,19 +507,19 @@ export default function CheckoutModal({
                       )}
                     </div>
 
-                    <div className="flex justify-between items-center bg-slate-950 border border-slate-800 px-4 py-3">
+                    <div className="flex justify-between items-center bg-slate-950 border border-slate-800 px-4 py-3 shadow-inner">
                       <div>
-                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                        <p className="text-xs font-bold uppercase text-slate-500">
                           Espèces Encaissées
                         </p>
-                        <p className="text-[9px] text-slate-700 uppercase tracking-wider mt-0.5">
+                        <p className="text-[10px] text-slate-600 mt-0.5">
                           Avance reçue maintenant
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => handleOpenNumpad("paid-amount")}
-                          className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-95 transition-all text-[9px] uppercase font-bold tracking-widest rounded-none shadow-sm"
+                          className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-95 transition-all text-xs font-bold rounded-none shadow-sm"
                         >
                           Saisir
                         </button>
@@ -502,15 +529,17 @@ export default function CheckoutModal({
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center bg-red-950/20 border border-red-900/40 px-4 py-3">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-red-500">
+                    <div className="flex justify-between items-center bg-red-950/20 border border-red-900/40 px-4 py-3 shadow-inner">
+                      <p className="text-xs font-bold uppercase text-red-500">
                         Dette Enregistrée
                       </p>
                       <span className="font-mono font-bold text-red-400 text-sm">
                         DZD{" "}
                         {Math.max(
                           0,
-                          calculatedGrandTotal - parseFloat(paidAmountInput),
+                          calculatedGrandTotal -
+                            parseFloat(paidAmountInput) -
+                            tipAmount,
                         ).toFixed(2)}
                       </span>
                     </div>
@@ -520,7 +549,7 @@ export default function CheckoutModal({
             </div>
           </div>
 
-          {/* ── MODAL FOOTER (fixed) ── */}
+          {/* ── MODAL FOOTER (ECRAN LED PHYSIQUE COMPACT) ── */}
           <div className="shrink-0 border-t border-slate-800 bg-slate-950 px-6 pt-4 pb-5">
             <div className="bg-[#0a0a0a] p-4 border-4 border-slate-800 rounded-sm flex justify-between items-center shadow-inner mb-4">
               <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
@@ -532,13 +561,9 @@ export default function CheckoutModal({
             </div>
 
             {tipAmount > 0 && (
-              <div className="flex justify-between items-center mb-4 px-1">
-                <span className="text-[9px] uppercase tracking-widest text-green-500 font-bold">
-                  + Pourboire {ticketToPay.barber}
-                </span>
-                <span className="font-mono text-green-400 font-bold text-xs">
-                  + DZD {tipAmount.toFixed(2)}
-                </span>
+              <div className="flex justify-between items-center mb-4 px-1 text-green-400 font-bold text-xs">
+                <span>+ Pourboire inclus</span>
+                <span className="font-mono">+ DZD {tipAmount.toFixed(2)}</span>
               </div>
             )}
 
@@ -546,14 +571,14 @@ export default function CheckoutModal({
               <button
                 onClick={onClose}
                 disabled={isProcessing}
-                className="py-4 bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-slate-300 font-bold text-[9px] uppercase tracking-widest disabled:opacity-40 rounded-none border border-slate-700 shadow-md"
+                className="py-4 bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-slate-300 font-bold text-xs uppercase rounded-none border border-slate-700 shadow-md"
               >
                 Retour
               </button>
               <button
                 onClick={handleConfirmPayment}
                 disabled={isProcessing}
-                className="py-4 bg-green-600 hover:bg-green-500 active:scale-95 transition-all text-white font-bold text-[9px] uppercase tracking-widest disabled:opacity-40 shadow-[0_0_20px_rgba(22,163,74,0.25)] rounded-none"
+                className="py-4 bg-green-600 hover:bg-green-500 active:scale-95 transition-all text-white font-bold text-xs uppercase shadow-[0_0_20px_rgba(22,163,74,0.25)] rounded-none"
               >
                 {isProcessing ? "Traitement…" : "Valider l'Encaissement"}
               </button>
@@ -563,7 +588,7 @@ export default function CheckoutModal({
       </Modal>
 
       {/* ═══════════════════════════════════════════════════════
-          SOUS-MODAL — MENU TACTILE CAFÉ
+          SOUS-MODALES DU CHECKOUT (CAFÉ POS & NUMPAD)
       ═══════════════════════════════════════════════════════ */}
       <Modal isOpen={showPOSModal} onClose={() => setShowPOSModal(false)}>
         <div className="flex flex-col bg-slate-950 h-[82vh]">
@@ -576,14 +601,14 @@ export default function CheckoutModal({
                 <h3 className="text-xs font-bold uppercase tracking-widest text-amber-500">
                   Menu Consommations
                 </h3>
-                <p className="text-[9px] text-slate-600 uppercase tracking-wider font-bold mt-0.5">
+                <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold mt-0.5">
                   Appuyez pour ajouter à la facture
                 </p>
               </div>
             </div>
             <button
               onClick={() => setShowPOSModal(false)}
-              className="px-4 py-2 bg-blue-600 text-white text-[10px] font-bold uppercase hover:bg-blue-500 active:scale-95 transition-colors rounded-none shadow-md"
+              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold uppercase hover:bg-blue-500 active:scale-95 transition-colors rounded-none shadow-md"
             >
               Fermer
             </button>
@@ -598,7 +623,7 @@ export default function CheckoutModal({
           </div>
           <div className="px-6 py-4 flex justify-between items-center shrink-0 bg-slate-950 border-t border-slate-800">
             <div>
-              <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-0.5">
+              <p className="text-[10px] uppercase font-bold text-slate-500 font-bold mb-0.5">
                 Total de la Facture
               </p>
               <span className="font-mono font-bold text-amber-400 text-lg">
@@ -615,9 +640,6 @@ export default function CheckoutModal({
         </div>
       </Modal>
 
-      {/* ═══════════════════════════════════════════════════════
-          SOUS-MODAL — NUMPAD SAISIE MANUELLE (TACTILE 3D)
-      ═══════════════════════════════════════════════════════ */}
       <Modal isOpen={showNumpadModal} onClose={() => setShowNumpadModal(false)}>
         <div className="bg-slate-950 rounded-xl overflow-hidden border-2 border-slate-800 shadow-2xl">
           <div className="px-6 py-5 border-b border-slate-800 text-center bg-slate-900/60">

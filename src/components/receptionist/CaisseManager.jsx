@@ -19,6 +19,9 @@ import Button from "../common/Button";
 import DataTable from "../common/DataTable";
 import Modal from "../common/Modal";
 import Input from "../common/Input";
+import ConfirmModal from "../common/ConfirmModal"; // <-- AJOUT DE L'IMPORT
+
+import ThermalReceipt from "../common/ThermalReceipt";
 
 export default function CaisseManager() {
   const { user } = useAuth();
@@ -41,6 +44,13 @@ export default function CaisseManager() {
   const [reportedCash, setReportedCash] = useState("");
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [tillToAudit, setTillToAudit] = useState(null);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState("");
+
+  // --- PRINT STATES ---
+  const [printData, setPrintData] = useState(null);
+  const [printTrigger, setPrintTrigger] = useState(0);
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -103,18 +113,40 @@ export default function CaisseManager() {
     }
   };
 
-  const handleCloseTill = async (e) => {
+  // 1. VÉRIFICATION AVANT CLÔTURE
+  const handleCheckBeforeClose = (e) => {
     e.preventDefault();
     if (!reportedCash || parseFloat(reportedCash) < 0)
       return toast.error("Montant saisi invalide");
 
+    const parsedReported = parseFloat(reportedCash);
+    const differencePrevue = parsedReported - currentTill.expectedCash;
+
+    // Si l'écart dépasse 2000 DZD, on ouvre la modale de confirmation
+    if (Math.abs(differencePrevue) > 2000) {
+      setConfirmMessage(
+        `Vous êtes sur le point de déclarer ${parsedReported} DA en caisse.\n` +
+          `Cela génère un écart énorme de ${differencePrevue.toFixed(2)} DA !\n\n` +
+          `Êtes-vous sûr de ne pas avoir fait une erreur de frappe ?`,
+      );
+      setIsConfirmModalOpen(true); // <-- Ouvre la modale d'alerte par-dessus !
+    } else {
+      // Si l'écart est normal (< 2000), on clôture directement
+      executeCloseTill(parsedReported);
+    }
+  };
+
+  // 2. EXÉCUTION RÉELLE DE LA CLÔTURE (Appelée directement ou après confirmation)
+  const executeCloseTill = async (finalReportedCash) => {
     try {
       const res = await api.post("/caisse/close", {
-        reportedCash: parseFloat(reportedCash),
+        reportedCash: finalReportedCash,
         username: user?.username,
       });
 
-      const diff = res.data.difference;
+      const closedTill = res.data;
+      const diff = closedTill.difference;
+
       if (diff === 0) {
         toast.success("Caisse parfaite ! Aucun écart.");
       } else if (diff < 0) {
@@ -128,6 +160,26 @@ export default function CaisseManager() {
           { duration: 5000 },
         );
       }
+
+      // Impression Z-Report
+      const totalIn = closedTill.transactions
+        .filter((t) => t.type === "in")
+        .reduce((sum, t) => sum + t.amount, 0);
+      const totalOut = closedTill.transactions
+        .filter((t) => t.type === "out")
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      setPrintData({
+        closedAt: closedTill.closedAt,
+        closedBy: closedTill.closedBy,
+        startingCash: closedTill.startingCash,
+        expectedCash: closedTill.expectedCash,
+        reportedCash: closedTill.reportedCash,
+        difference: closedTill.difference,
+        totalIn,
+        totalOut,
+      });
+      setPrintTrigger((prev) => prev + 1);
 
       setIsCloseModalOpen(false);
       setReportedCash("");
@@ -472,7 +524,7 @@ export default function CaisseManager() {
         onClose={() => setIsCloseModalOpen(false)}
       >
         <form
-          onSubmit={handleCloseTill}
+          onSubmit={handleCheckBeforeClose} // <-- DOIT ÊTRE CECI !
           className="p-8 border-t-4 border-red-500"
         >
           <h3 className="text-xl font-serif font-bold text-red-500 mb-2 uppercase tracking-wider text-center">
@@ -503,7 +555,7 @@ export default function CaisseManager() {
               </Button>
               <Button
                 variant="danger"
-                type="submit"
+                type="submit" // <-- DOIT ÊTRE "submit" !
                 className="bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-none shadow-lg shadow-red-500/20"
               >
                 Valider la Clôture
@@ -635,6 +687,22 @@ export default function CaisseManager() {
           </div>
         )}
       </Modal>
+      {/* --- NOTRE BELLE MODALE DE CONFIRMATION (REMPLACE WINDOW.CONFIRM) --- */}
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        onConfirm={() => executeCloseTill(parseFloat(reportedCash))}
+        title="ÉCART ANORMAL DÉTECTÉ"
+        message={confirmMessage}
+        confirmText="Forcer la Clôture"
+        cancelText="Corriger la saisie"
+        isDanger={true}
+      />
+      <ThermalReceipt
+        type="z-report"
+        data={printData}
+        printTrigger={printTrigger}
+      />
     </div>
   );
 }

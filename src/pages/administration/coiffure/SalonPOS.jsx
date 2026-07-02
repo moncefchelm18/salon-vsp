@@ -347,7 +347,7 @@ export default function SalonPOS() {
               <option value="">-- Sélectionner --</option>
               {barbers.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  {b.name} {b.poste ? `(Poste ${b.poste})` : "(Sans Poste)"}
                 </option>
               ))}
             </select>

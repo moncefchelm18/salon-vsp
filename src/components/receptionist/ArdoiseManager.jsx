@@ -130,22 +130,6 @@ export default function ArdoiseManager() {
         </div>
       </div>
 
-      {/* ZONE DE RECHERCHE TACTILE */}
-      <div className="bg-surface border border-subtle p-4 shadow-sm">
-        <div className="relative max-w-sm">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-t-muted"
-          />
-          <input
-            placeholder="Rechercher un client (Nom ou Tél)..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-main border border-subtle text-t-main px-4 py-2.5 pl-9 text-xs focus:outline-none focus:border-brand"
-          />
-        </div>
-      </div>
-
       {/* TABLEAU DES CLIENTS ET DES CRÉDITS */}
       <DataTable
         headers={[

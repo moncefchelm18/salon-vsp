@@ -274,8 +274,8 @@ export default function BarberQueue({ barberId, barberName }) {
                     className="bg-slate-950 border border-slate-800 p-4 hover:border-amber-500/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                   >
                     <div className="flex gap-4 items-center">
-                      <div className="w-10 h-10 bg-slate-900 border border-slate-700 text-slate-400 flex justify-center items-center font-mono font-bold">
-                        #{index + 1}
+                      <div className="w-10 h-10 bg-slate-900 border border-amber-500 text-amber-500 flex justify-center items-center font-mono font-bold text-lg shadow-[0_0_10px_rgba(245,158,11,0.2)]">
+                        {ticket.queueNumber}
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-slate-100 uppercase tracking-wide">
@@ -349,10 +349,11 @@ export default function BarberQueue({ barberId, barberName }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Chiffre d'affaires généré pour le salon */}
             <StatCard
               icon={DollarSign}
-              label={`Revenus Caisse (${statsPeriod.toUpperCase()})`}
+              label={`CA Généré (${statsPeriod.toUpperCase()})`}
               value={
                 isStatsLoading
                   ? "..."
@@ -362,14 +363,14 @@ export default function BarberQueue({ barberId, barberName }) {
               highlight={true}
             />
 
-            {/* NOUVEAU : Pourboires (Ce qui appartient au Barbier) */}
+            {/* NOUVEAU : Calcul du gain personnel du barbier (50% de la coupe + 100% du pourboire) */}
             <StatCard
               icon={DollarSign}
-              label={`Mes Pourboires (${statsPeriod.toUpperCase()})`}
+              label={`Mon Gain Personnel (50% + Pourboires)`}
               value={
                 isStatsLoading
                   ? "..."
-                  : `DZD ${statsData.summary.totalTips.toFixed(2)}`
+                  : `DZD ${(statsData.summary.totalRevenue * 0.5 + statsData.summary.totalTips).toFixed(2)}`
               }
               colorClass="text-green-400"
               highlight={true}
@@ -384,19 +385,20 @@ export default function BarberQueue({ barberId, barberName }) {
           </div>
 
           <DataTable
-            title="Mes Factures Validées (Caisse Centrale)"
+            title="Mes Prestations Validées"
             headers={[
               { label: "Ref" },
               { label: "Client" },
               { label: "Prestation" },
-              { label: "Pourboire", align: "right" },
-              { label: "Prix Total", align: "right" },
+              { label: "Pourboire (100%)", align: "right" },
+              { label: "Prix Facturé", align: "right" },
+              { label: "Ma Part (50%)", align: "right" }, // <-- NOUVELLE COLONNE
             ]}
           >
             {isStatsLoading ? (
               <tr>
                 <td
-                  colSpan="4"
+                  colSpan="6"
                   className="py-10 text-center animate-pulse text-amber-500"
                 >
                   Calcul...
@@ -423,12 +425,17 @@ export default function BarberQueue({ barberId, barberName }) {
                   <td className="px-6 py-4 text-right font-mono font-bold text-amber-400">
                     DZD {Number(t.price).toFixed(2)}
                   </td>
+
+                  {/* --- NOUVEAU : AFFICHER LE GAIN DE LA PRESTATION --- */}
+                  <td className="px-6 py-4 text-right font-mono font-bold text-[#00ff00]">
+                    DZD {(Number(t.price) * 0.5 + Number(t.tip)).toFixed(2)}
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
                 <td
-                  colSpan="4"
+                  colSpan="6"
                   className="text-center py-10 text-slate-600 font-bold uppercase tracking-widest text-xs"
                 >
                   Aucune coupe pour cette période

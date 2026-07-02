@@ -185,8 +185,10 @@ export default function ClientsManager() {
         (b) => b.id === Number(finalBarberId),
       );
 
+      console.log("Ticket créé:", createdTicket);
       setPrintData({
         id: createdTicket.id,
+        queueNumber: createdTicket.queueNumber,
         clientName: createdTicket.clientName,
         barber: assignedBarber ? assignedBarber.name : "Coiffeur",
       });
@@ -482,7 +484,7 @@ export default function ClientsManager() {
                   <option value="">-- Sélectionner Coiffeur --</option>
                   {barbers.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.name}
+                      {b.name} {b.poste ? `(Poste ${b.poste})` : "(Sans Poste)"}
                     </option>
                   ))}
                 </select>
@@ -633,7 +635,7 @@ export default function ClientsManager() {
                         }
                         className="py-2 text-xs shadow-md flex items-center gap-1"
                       >
-                        <PlayCircle size={14} /> Installé (Passe-droit)
+                        <PlayCircle size={14} /> Installé
                       </Button>
                     </td>
                   </tr>
@@ -658,10 +660,11 @@ export default function ClientsManager() {
             ) : (
               <DataTable
                 headers={[
-                  { label: "Réf" },
+                  { label: "N° Passage" }, // <-- DEVIENT "N° Passage" au lieu de "Réf"
                   { label: "Client" },
                   { label: "Téléphone" },
-                  { label: "Assigné à" },
+                  { label: "Coiffeur" },
+                  { label: "Poste" },
                   { label: "Arrivée" },
                   { label: "Statut" },
                   { label: "Actions", align: "right" },
@@ -673,8 +676,8 @@ export default function ClientsManager() {
                       key={ticket.id}
                       className="border-b border-subtle hover:bg-brand/5 transition-colors"
                     >
-                      <td className="px-6 py-4 text-t-muted font-mono font-bold text-xs uppercase">
-                        #{ticket.id}
+                      <td className="px-6 py-4 text-brand font-mono font-bold text-sm uppercase">
+                        #{ticket.queueNumber || ticket.id}
                       </td>
                       <td className="px-6 py-4 text-t-main font-bold uppercase tracking-tight text-xs">
                         {ticket.clientName}
@@ -684,6 +687,9 @@ export default function ClientsManager() {
                       </td>
                       <td className="px-6 py-4 text-brand uppercase text-[10px] font-bold tracking-widest">
                         {ticket.barber}
+                      </td>
+                      <td className="px-6 py-4 text-brand font-mono font-bold text-xs uppercase">
+                        {ticket.poste ? `Poste ${ticket.poste}` : "--"}
                       </td>
                       <td className="px-6 py-4 text-t-muted font-mono text-xs">
                         {ticket.time}
@@ -699,7 +705,7 @@ export default function ClientsManager() {
                             className="py-2 text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white"
                             title="Changer de barbier"
                           >
-                            <Edit size={14} className="mr-1" /> Transfert
+                            <Edit size={14} className="mr-1" />
                           </Button>
                         )}
                         {["waiting", "in-progress"].includes(ticket.status) && (

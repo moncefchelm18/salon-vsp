@@ -1,136 +1,151 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 
-/**
- * Composant de reçu thermique (Caché à l'écran, visible à l'impression)
- * type: "queue" (Ticket d'attente) | "order" (Bon de commande) | "receipt" (Facture payée)
- */
 export default function ThermalReceipt({
   type = "receipt",
   data,
-  printTrigger, // Variable qui change pour forcer l'impression
+  printTrigger,
 }) {
-  // Fonction magique qui déclenche l'imprimante quand les données changent
-  React.useEffect(() => {
-    if (printTrigger && data) {
-      window.print();
+  useEffect(() => {
+    if (printTrigger > 0 && data) {
+      console.log("🖨️ [1/2] PRÉPARATION TICKET :", {
+        type,
+        data,
+        printTrigger,
+      });
+      const timer = setTimeout(() => {
+        console.log("🖨️ [2/2] LANCEMENT DE WINDOW.PRINT()");
+        window.print();
+      }, 300);
+      return () => clearTimeout(timer);
     }
   }, [printTrigger, data]);
 
   if (!data) return null;
 
-  return (
-    <div className="print-only p-4 text-black bg-white w-[80mm] text-sm leading-tight">
-      {/* EN-TÊTE DU TICKET */}
-      <div className="text-center mb-4 border-b-2 border-black border-dashed pb-4">
-        <h1 className="font-bold text-xl uppercase">Sallon Picasso</h1>
-        <p className="text-xs">Coiffure & Cafétéria Premium</p>
-        <p className="text-xs">Tél : 0550 00 00 00</p>
-        <p className="text-xs mt-2 font-bold uppercase">
-          {type === "queue" && "*** TICKET D'ATTENTE ***"}
-          {type === "order" && "*** BON DE COMMANDE ***"}
-          {type === "receipt" && "*** REÇU DE PAIEMENT ***"}
-        </p>
+  // ✅ THE FIX: createPortal renders directly into <body>,
+  // bypassing ALL parent wrappers (AuthProvider, BrowserRouter, etc.)
+  // This guarantees the print CSS can target it cleanly.
+  return createPortal(
+    <div id="thermal-receipt-root" className="print-only">
+      {/* EN-TÊTE DU TICKET (Commun) */}
+      <div className="receipt-header">
+        <h1>Sallon Picasso</h1>
+        <p>Coiffure &amp; Cafétéria Premium</p>
+        <p>Tél : 0550 00 00 00</p>
       </div>
 
-      {/* INFORMATIONS PRINCIPALES */}
-      <div className="mb-4">
-        <p>
-          Date: {new Date().toLocaleDateString("fr-FR")}{" "}
-          {new Date().toLocaleTimeString("fr-FR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
-        <p>Ticket N°: {data.ticketId || data.id || "---"}</p>
-        {data.clientName && <p>Client: {data.clientName}</p>}
-        {data.barber && <p>Coiffeur: {data.barber}</p>}
-      </div>
+      {/* TICKET D'ATTENTE */}
+      {type === "queue" && (
+        <div className="receipt-section">
+          <p className="receipt-label">Votre Numéro</p>
+          {data.queueNumber !== undefined && data.queueNumber !== null ? (
+            <p className="receipt-number">{data.queueNumber}</p>
+          ) : (
+            <p className="receipt-error">ERREUR: N° INCONNU</p>
+          )}
+          <p className="receipt-subtitle">Veuillez patienter</p>
+          <div className="receipt-meta">
+            <p>Client : {data.clientName || "--"}</p>
+            <p>Avec : {data.barber || "--"}</p>
+            <p>
+              Le : {new Date().toLocaleDateString("fr-FR")} à{" "}
+              {new Date().toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          </div>
+        </div>
+      )}
 
-      <div className="border-b border-black border-dashed mb-2"></div>
-
-      {/* DÉTAIL DES ARTICLES (Pour Reçu ou Commande) */}
+      {/* BON DE COMMANDE OU REÇU DE CAISSE */}
       {(type === "receipt" || type === "order") && (
-        <div className="mb-4">
-          <table className="w-full text-left">
+        <>
+          <div className="receipt-type-label">
+            {type === "order" && "*** BON DE PRÉPARATION ***"}
+            {type === "receipt" && "*** REÇU DE PAIEMENT ***"}
+          </div>
+
+          <div className="receipt-meta">
+            <p>
+              Le : {new Date().toLocaleDateString("fr-FR")} à{" "}
+              {new Date().toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+            <p>Facture N°: {data.ticketId || data.id || "---"}</p>
+            {data.clientName && <p>Client: {data.clientName}</p>}
+            {data.barber && <p>Vendeur: {data.barber}</p>}
+          </div>
+
+          <div className="receipt-divider"></div>
+
+          <table className="receipt-table">
             <thead>
-              <tr className="border-b border-black">
-                <th className="pb-1 w-2/3">Article</th>
-                <th className="pb-1 w-1/3 text-right">Prix</th>
+              <tr>
+                <th className="col-left">Article</th>
+                <th className="col-right">Prix</th>
               </tr>
             </thead>
             <tbody>
-              {/* Prestation Coiffure */}
               {data.service && (
-                <tr className="align-top">
-                  <td className="pt-2">{data.service}</td>
-                  <td className="pt-2 text-right">
-                    {data.haircutPrice?.toFixed(2)}
-                  </td>
+                <tr>
+                  <td>{data.service}</td>
+                  <td className="col-right">{data.haircutPrice?.toFixed(2)}</td>
                 </tr>
               )}
-
-              {/* Articles Café */}
               {data.items?.map((item, index) => (
-                <tr key={index} className="align-top">
-                  <td className="pt-1">
+                <tr key={index}>
+                  <td>
                     {item.quantity}x {item.name}
                   </td>
-                  <td className="pt-1 text-right">
+                  <td className="col-right">
                     {(item.price * item.quantity).toFixed(2)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
 
-      {/* TICKET D'ATTENTE SPÉCIFIQUE */}
-      {type === "queue" && (
-        <div className="text-center py-6">
-          <p className="text-3xl font-bold mb-2">#{data.id}</p>
-          <p className="text-lg">Veuillez patienter</p>
-        </div>
-      )}
-
-      {/* TOTAUX (Seulement pour les reçus payés) */}
-      {type === "receipt" && (
-        <>
-          <div className="border-t-2 border-black border-dashed pt-2 mb-4">
-            <div className="flex justify-between font-bold text-lg">
-              <span>TOTAL:</span>
-              <span>DZD {data.grandTotal?.toFixed(2)}</span>
+          {type === "receipt" && (
+            <div className="receipt-totals">
+              <div className="total-row total-main">
+                <span>TOTAL:</span>
+                <span>DZD {data.grandTotal?.toFixed(2)}</span>
+              </div>
+              {data.discountAmount > 0 && (
+                <div className="total-row">
+                  <span>Remise:</span>
+                  <span>- DZD {data.discountAmount?.toFixed(2)}</span>
+                </div>
+              )}
+              {data.tipAmount > 0 && (
+                <div className="total-row">
+                  <span>Pourboire:</span>
+                  <span>+ DZD {data.tipAmount?.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="total-row">
+                <span>Payé en Espèces:</span>
+                <span>DZD {data.paidAmount?.toFixed(2)}</span>
+              </div>
+              {data.unpaidDebt > 0 && (
+                <div className="total-row total-debt">
+                  <span>Reste à payer (Ardoise):</span>
+                  <span>DZD {data.unpaidDebt?.toFixed(2)}</span>
+                </div>
+              )}
             </div>
-            {data.discountAmount > 0 && (
-              <div className="flex justify-between text-xs">
-                <span>Remise:</span>
-                <span>- DZD {data.discountAmount?.toFixed(2)}</span>
-              </div>
-            )}
-            {data.tipAmount > 0 && (
-              <div className="flex justify-between text-xs">
-                <span>Pourboire:</span>
-                <span>+ DZD {data.tipAmount?.toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs mt-2">
-              <span>Payé en Espèces:</span>
-              <span>DZD {data.paidAmount?.toFixed(2)}</span>
-            </div>
-            {data.unpaidDebt > 0 && (
-              <div className="flex justify-between text-xs font-bold mt-1">
-                <span>Reste à payer (Ardoise):</span>
-                <span>DZD {data.unpaidDebt?.toFixed(2)}</span>
-              </div>
-            )}
-          </div>
+          )}
         </>
       )}
 
       {/* PIED DE TICKET */}
-      <div className="text-center mt-6 text-xs">
+      <div className="receipt-footer">
         {type === "order" ? (
-          <p className="font-bold text-lg border border-black py-1">NON PAYÉ</p>
+          <p className="receipt-unpaid">NON PAYÉ</p>
         ) : (
           <>
             <p>Merci de votre visite !</p>
@@ -139,8 +154,75 @@ export default function ThermalReceipt({
         )}
       </div>
 
-      {/* Espace blanc pour permettre à l'imprimante de couper le papier */}
-      <div className="h-10"></div>
-    </div>
+      {/* ==================================================== */}
+      {/* TICKET DE CLÔTURE (Z-REPORT) */}
+      {/* ==================================================== */}
+      {type === "z-report" && (
+        <>
+          <div className="receipt-type-label">
+            *** TICKET DE CLÔTURE (Z-REPORT) ***
+          </div>
+
+          <div className="receipt-meta">
+            <p>Date : {new Date(data.closedAt).toLocaleDateString("fr-FR")}</p>
+            <p>
+              Heure :{" "}
+              {new Date(data.closedAt).toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+            <p>Opérateur : {data.closedBy}</p>
+          </div>
+
+          <div className="receipt-divider"></div>
+
+          <div className="receipt-totals">
+            <div className="total-row">
+              <span>Fond de caisse initial:</span>
+              <span>DZD {data.startingCash?.toFixed(2)}</span>
+            </div>
+
+            <div className="total-row">
+              <span>Total Entrées (Ventes +):</span>
+              <span>DZD {data.totalIn?.toFixed(2)}</span>
+            </div>
+
+            <div className="total-row">
+              <span>Total Sorties (Dépenses -):</span>
+              <span>DZD {data.totalOut?.toFixed(2)}</span>
+            </div>
+
+            <div className="receipt-divider"></div>
+
+            <div className="total-row">
+              <span>Solde Théorique:</span>
+              <span>DZD {data.expectedCash?.toFixed(2)}</span>
+            </div>
+
+            <div className="total-row total-main">
+              <span>Compté en Tiroir:</span>
+              <span>DZD {data.reportedCash?.toFixed(2)}</span>
+            </div>
+
+            <div className="receipt-divider"></div>
+
+            <div className="total-row total-debt">
+              <span>Écart de Caisse:</span>
+              <span>
+                {data.difference === 0
+                  ? "PARFAIT (0.00)"
+                  : data.difference > 0
+                    ? `EXCÉDENT (+${data.difference.toFixed(2)})`
+                    : `DÉFICIT (${data.difference.toFixed(2)})`}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="receipt-cut-space"></div>
+    </div>,
+    document.body, // ← renders straight into <body>, no parent interference
   );
 }

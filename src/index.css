@@ -4,7 +4,6 @@
 @import "tw-animate-css";
 
 @theme {
-  /* This maps Tailwind classes (like bg-main) to our dynamic variables */
   --color-brand: var(--theme-brand);
   --color-main: var(--theme-main);
   --color-surface: var(--theme-surface);
@@ -41,11 +40,10 @@ html.theme-cafe {
 @layer base {
   * {
     border-color: var(--theme-subtle);
-    scrollbar-width: thin; /* Force la barre fine sous Firefox */
-    scrollbar-color: var(--theme-border-subtle, #334155) transparent; /* Poignée grise / Piste transparente */
+    scrollbar-width: thin;
+    scrollbar-color: var(--theme-border-subtle, #334155) transparent;
   }
   body {
-    /* Apply variables directly to the body */
     background-color: var(--theme-main);
     color: var(--theme-t-main);
     font-family: var(--font-sans);
@@ -62,65 +60,197 @@ html.theme-cafe {
   }
 }
 
-/* 1. Pour les navigateurs Webkit (Chrome, Safari, Edge, Opera) */
 ::-webkit-scrollbar {
-  width: 6px; /* Très fine verticalement */
-  height: 6px; /* Très fine horizontalement */
+  width: 6px;
+  height: 6px;
 }
-
-/* Le fond de la piste de défilement (transparent pour se fondre dans le décor) */
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
-/* La poignée de défilement (Pilule grise discrète par défaut) */
 ::-webkit-scrollbar-thumb {
   background: var(--theme-border-subtle, #334155);
-  border-radius: 10px; /* Bords arrondis de style pilule */
+  border-radius: 10px;
   transition: background 0.3s ease;
 }
-
-/* Effet survol : La poignée s'allume avec la couleur de marque (Or ou Bleu) ! */
 ::-webkit-scrollbar-thumb:hover {
   background: var(--theme-brand, #d4af37);
 }
+
 /* ======================================================================
-   IMPRESSION THERMIQUE (XPRINTER 80mm)
+   THERMAL RECEIPT — Plain CSS (no Tailwind) for bulletproof print output
    ====================================================================== */
 
-/* Cacher le ticket sur l'écran normal */
-.print-only {
+/* Hidden on screen */
+#thermal-receipt-root {
   display: none;
 }
 
+/* ✅ PRINT STYLES — target by ID, zero specificity fights */
 @media print {
-  /* Cacher TOUT le site web */
+  /* 1. Kill everything on the page */
   body * {
-    visibility: hidden;
+    display: none !important;
   }
 
-  /* Afficher UNIQUEMENT le bloc d'impression */
-  .print-only,
-  .print-only * {
-    visibility: visible;
+  /* 2. Show ONLY the receipt — direct child of body via Portal */
+  body > #thermal-receipt-root,
+  body > #thermal-receipt-root * {
+    display: revert !important;
+    visibility: visible !important;
   }
 
-  .print-only {
-    display: block;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm; /* Format Xprinter Standard */
-    margin: 0;
-    padding: 0;
-    background: white;
-    color: black;
-    font-family: monospace; /* Police de caisse classique */
+  /* 3. Receipt wrapper */
+  body > #thermal-receipt-root {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    padding: 4mm !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: monospace, monospace !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    z-index: 99999 !important;
   }
 
-  /* Supprimer les marges par défaut du navigateur */
   @page {
     margin: 0;
     size: 80mm auto;
+  }
+
+  /* 4. Component styles — plain CSS, no Tailwind needed */
+  .receipt-header {
+    text-align: center;
+    border-bottom: 2px dashed #000;
+    padding-bottom: 6mm;
+    margin-bottom: 4mm;
+  }
+  .receipt-header h1 {
+    font-size: 14pt;
+    font-weight: 900;
+    text-transform: uppercase;
+    margin: 0 0 2mm 0;
+    font-family: monospace !important;
+  }
+  .receipt-header p {
+    font-size: 8pt;
+    margin: 1mm 0;
+  }
+
+  .receipt-section {
+    text-align: center;
+    border-bottom: 2px dashed #000;
+    padding: 4mm 0;
+    margin-bottom: 4mm;
+  }
+  .receipt-label {
+    font-size: 9pt;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    margin: 0 0 2mm 0;
+  }
+  .receipt-number {
+    font-size: 42pt;
+    font-weight: 900;
+    margin: 3mm 0;
+    line-height: 1;
+  }
+  .receipt-subtitle {
+    font-size: 11pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 2mm 0;
+  }
+  .receipt-error {
+    font-size: 12pt;
+    font-weight: bold;
+    border: 1px solid #000;
+    padding: 2mm;
+  }
+
+  .receipt-meta {
+    text-align: left;
+    font-size: 8pt;
+    margin: 3mm 0;
+  }
+  .receipt-meta p {
+    margin: 1mm 0;
+  }
+
+  .receipt-type-label {
+    text-align: center;
+    font-size: 8pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 3mm 0;
+  }
+
+  .receipt-divider {
+    border-bottom: 1px dashed #000;
+    margin: 2mm 0;
+  }
+
+  .receipt-table {
+    width: 100%;
+    font-size: 8pt;
+    border-collapse: collapse;
+    margin: 2mm 0 4mm 0;
+  }
+  .receipt-table thead tr {
+    border-bottom: 1px solid #000;
+  }
+  .receipt-table th,
+  .receipt-table td {
+    padding: 1mm 0;
+    vertical-align: top;
+  }
+  .receipt-table .col-right,
+  .receipt-table th.col-right {
+    text-align: right;
+    width: 30%;
+  }
+
+  .receipt-totals {
+    border-top: 2px dashed #000;
+    padding-top: 2mm;
+    margin-bottom: 4mm;
+  }
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8pt;
+    margin: 1mm 0;
+  }
+  .total-main {
+    font-size: 13pt;
+    font-weight: 900;
+    margin-bottom: 2mm;
+  }
+  .total-debt {
+    font-weight: bold;
+    margin-top: 2mm;
+  }
+
+  .receipt-footer {
+    text-align: center;
+    font-size: 8pt;
+    margin-top: 6mm;
+  }
+  .receipt-footer p {
+    margin: 1mm 0;
+  }
+  .receipt-unpaid {
+    font-size: 13pt;
+    font-weight: bold;
+    border: 2px solid #000;
+    padding: 2mm;
+    display: inline-block;
+  }
+
+  .receipt-cut-space {
+    height: 15mm;
   }
 }
