@@ -1,17 +1,20 @@
 import axios from "axios";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+// ── LA MAGIE EST ICI ──
+// Si on est en "npm run dev" (développement), on utilise le .env
+// Si on est compilé (dans le .exe ou l'iPad), on utilise "/api" pour s'adapter automatiquement à la vraie IP / localhost !
+const isDev = import.meta.env.MODE === "development";
+
+const API_BASE_URL = isDev
+  ? import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+  : "/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  // REMOVED: "Content-Type": "application/json"
-  // Let Axios and the browser set the content type automatically
 });
 
 api.interceptors.request.use(
   (config) => {
-    // If you have a token in the future, it goes here
     const token = localStorage.getItem("picasso_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

@@ -1,11 +1,12 @@
 import React from "react";
-import { Clock, CheckCircle, Coffee, CreditCard } from "lucide-react";
+import { Clock, CheckCircle, Coffee, CreditCard, Plus } from "lucide-react"; // <-- Ajout de Plus
 
 export default function PaymentsQueue({
   pendingPayments,
   isProcessing,
   onVoidPayment,
   onOpenPayModal,
+  onOpenManualPay, // <-- NOUVELLE PROP RÉCUPÉRÉE ICI
 }) {
   return (
     <section className="bg-slate-900 border border-slate-800">
@@ -25,15 +26,27 @@ export default function PaymentsQueue({
             </p>
           </div>
         </div>
-        {/* Live pulse indicator */}
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full bg-amber-500 opacity-75"></span>
-            <span className="relative inline-flex h-2 w-2 bg-amber-500"></span>
-          </span>
-          <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">
-            Live
-          </span>
+
+        {/* --- NOUVELLE ZONE DROITE (Bouton Vente Directe + Live Pulse) --- */}
+        <div className="flex items-center gap-5">
+          {/* LE BOUTON DÉPLACÉ ICI */}
+          <button
+            onClick={onOpenManualPay}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95 shadow-md rounded-none"
+          >
+            <Plus size={14} /> Vente Directe (Sans RDV)
+          </button>
+
+          {/* Live pulse indicator */}
+          <div className="flex items-center gap-2 border-l border-slate-800 pl-5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full bg-amber-500 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">
+              Live
+            </span>
+          </div>
         </div>
       </div>
 

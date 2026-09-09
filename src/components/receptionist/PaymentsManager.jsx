@@ -4,6 +4,8 @@ import { toast } from "react-hot-toast";
 import api from "../../utils/api";
 
 import Button from "../common/Button";
+import Modal from "../common/Modal"; // <-- AJOUT POUR LE NUMPAD
+import VirtualNumpad from "../../features/cafe-pos/VirtualNumpad"; // <-- AJOUT POUR LE NUMPAD
 
 // --- SOUS-COMPOSANTS DÉCOUPÉS ---
 import PaymentsQueue from "./payments/PaymentsQueue";
@@ -32,7 +34,7 @@ export default function PaymentsManager() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [addedCafeItems, setAddedCafeItems] = useState([]);
 
-  // States Numpad
+  // States Numpad (DÉPLACÉS AU NIVEAU GLOBAL)
   const [showNumpadModal, setShowNumpadModal] = useState(false);
   const [numpadValue, setNumpadValue] = useState("0");
   const [tipAmount, setTipAmount] = useState(0);
@@ -61,7 +63,6 @@ export default function PaymentsManager() {
   const [manualClientName, setManualClientName] = useState("Client de passage");
   const [manualPhone, setManualPhone] = useState("");
 
-  // --- PRINT STATES ---
   const [printData, setPrintData] = useState(null);
   const [printTrigger, setPrintTrigger] = useState(0);
 
@@ -245,7 +246,6 @@ export default function PaymentsManager() {
     discountValue,
     tipAmount,
   ]);
-
   const handleConfirmPayment = async () => {
     if (!ticketToPay) return;
 
@@ -285,8 +285,11 @@ export default function PaymentsManager() {
         ? parseFloat(paidAmountInput)
         : finalGrandTotalWithoutTip;
 
+      // MODIFIEZ LE PAYLOAD ICI :
       const payload = {
         totalPrice: finalHaircutPrice,
+        originalPrice: priceToPay, // <-- NOUVEAU : Le prix brut de la coiffure (Protège la commission)
+        discountAmount: discountAmount, // <-- NOUVEAU : La remise appliquée par le patron
         additionalCafeItems: addedCafeItems,
         tip: tipAmount,
         clientId:
@@ -295,7 +298,6 @@ export default function PaymentsManager() {
             : undefined,
         paidAmount: actualPaid,
       };
-
       if (ticketToPay.id === 0) {
         // --- 1. APPEL API ENCAISSEMENT DIRECT ---
         await api.post("/tickets/manual-pay", {
@@ -414,7 +416,9 @@ export default function PaymentsManager() {
         return toast.error("Le montant payé ne peut dépasser le total.");
       setPaidAmountInput(val.toString());
       setShowNumpadModal(false);
-    } else if (numpadTarget === "post-tip") {
+    }
+    // --- LE CÉLÈBRE BOUTON POST-TIP DE L'HISTORIQUE ---
+    else if (numpadTarget === "post-tip") {
       setIsProcessing(true);
       try {
         await api.patch(`/tickets/${ticketForPostTip.id}/tip`, {
@@ -440,21 +444,9 @@ export default function PaymentsManager() {
         isProcessing={isProcessing}
         onVoidPayment={handleVoidPayment}
         onOpenPayModal={handleOpenPayModal}
+        onOpenManualPay={handleOpenManualPayModal} // <-- AJOUTEZ CETTE LIGNE
       />
 
-      {/* ── BOUTON VENTE MANUELLE DIRECTE ── */}
-      <div className="flex justify-end p-4 bg-slate-900 border border-slate-800">
-        <Button
-          variant="success"
-          onClick={handleOpenManualPayModal}
-          className="py-4 px-8 font-bold text-xs shadow-lg shadow-green-500/10 animate-pulse"
-        >
-          <Plus size={16} className="mr-2" /> Vente Directe / Facturer sans
-          ticket
-        </Button>
-      </div>
-
-      {/* ── SECTION 2 : HISTORIQUE ── */}
       <PaymentsHistory
         completedPaymentsHistory={completedPaymentsHistory}
         totalRevenueToday={totalRevenueToday}
@@ -471,7 +463,7 @@ export default function PaymentsManager() {
           setTicketForPostTip(ticket);
           setNumpadTarget("post-tip");
           setNumpadValue("0");
-          setShowNumpadModal(true);
+          setShowNumpadModal(true); // Ouvre la modale globale que l'on vient de sortir !
         }}
       />
 
@@ -551,6 +543,32 @@ export default function PaymentsManager() {
         data={printData}
         printTrigger={printTrigger}
       />
+      {/* ═══════════════════════════════════════════════════════
+          MODALE NUMPAD GLOBALE (A été sortie de CheckoutModal)
+      ═══════════════════════════════════════════════════════ */}
+      <Modal isOpen={showNumpadModal} onClose={() => setShowNumpadModal(false)}>
+        <div className="bg-slate-950 rounded-xl overflow-hidden border-2 border-slate-800 shadow-2xl">
+          <div className="px-6 py-5 border-b border-slate-800 text-center bg-slate-900/60">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-amber-500">
+              {numpadTarget === "discount-percent" && "Saisir la Remise (%)"}
+              {numpadTarget === "discount-amount" && "Saisir la Remise (DZD)"}
+              {numpadTarget === "tip" && "Saisir le Pourboire"}
+              {numpadTarget === "post-tip" &&
+                "Ajouter un Pourboire A posteriori"}
+              {numpadTarget === "paid-amount" && "Montant Payé Maintenant"}
+              {numpadTarget === "price" && "Ajustement Manuel du Prix"}
+            </h3>
+          </div>
+          <div className="p-6 bg-slate-950">
+            <VirtualNumpad
+              value={numpadValue}
+              onChange={setNumpadValue}
+              onEnter={handleNumpadSubmit}
+              onCancel={() => setShowNumpadModal(false)}
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -37,7 +37,7 @@ export default function BarberLogin({ onSelectBarber }) {
         <div className="p-8">
           <div className="text-center mb-8">
             <h1 className="font-serif text-4xl font-bold text-amber-400 mb-2">
-              Sallon Picasso
+              Salon VSP
             </h1>
             <p className="text-slate-400 text-sm tracking-wide">BARBER LOGIN</p>
           </div>

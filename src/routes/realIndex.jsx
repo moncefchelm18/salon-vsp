@@ -19,6 +19,8 @@ import SettingsView from "../components/receptionist/SettingsView";
 import ArdoiseManager from "../components/receptionist/ArdoiseManager";
 import CaisseManager from "../components/receptionist/CaisseManager";
 import SalonPOS from "../pages/administration/coiffure/SalonPOS";
+import SalonStock from "../pages/administration/coiffure/SalonStock"; // <-- IMPORT
+
 // (CAFE) PAGES
 import CafeCommandes from "../pages/administration/cafe/CafeCommandes";
 import CafeProducts from "../pages/administration/cafe/CafeProducts";
@@ -77,6 +79,8 @@ export default function AppRoutes() {
         <Route path="paiements" element={<PaymentsManager />} />
         <Route path="ardoise" element={<ArdoiseManager />} />
         <Route path="caisse" element={<CaisseManager />} />
+        <Route path="stock" element={<SalonStock />} />{" "}
+        {/* <-- NOUVELLE ROUTE */}
         <Route
           path="menu"
           element={

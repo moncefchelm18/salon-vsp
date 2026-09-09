@@ -10,7 +10,7 @@ export default function Sidebar({ logo, navItems, appMode }) {
       <div className="px-6 border-b border-subtle flex gap-2 items-center h-20 shrink-0">
         <img src={logo} alt="Logo" className="w-12 h-12" />
         <h1 className="font-serif text-xl font-bold uppercase tracking-tight">
-          Sallon Picasso
+          Salon VSP
         </h1>
       </div>
 

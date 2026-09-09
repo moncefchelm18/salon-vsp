@@ -248,7 +248,7 @@ export default function BarbersManager() {
                 name="name"
                 value={formData.name}
                 onChange={handleFormChange}
-                placeholder="Ex: Marco Picasso"
+                placeholder="Ex: Marco VSP"
                 required
               />
 

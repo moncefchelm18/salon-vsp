@@ -14,7 +14,7 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
-import logo from "../assets/images/logo.png";
+import logo from "../assets/images/logo-transparent.png";
 
 export default function ReceptionistLayout() {
   const location = useLocation();
@@ -110,7 +110,7 @@ export default function ReceptionistLayout() {
         <header className="h-20 bg-slate-900 border-b border-slate-800 px-8 flex items-center justify-between shrink-0 z-40">
           <h2 className="text-xl font-bold uppercase tracking-widest text-slate-200">
             {navItems.find((n) => location.pathname === n.path)?.label ||
-              "Picasso Admin"}
+              "VSP Admin"}
           </h2>
 
           <button

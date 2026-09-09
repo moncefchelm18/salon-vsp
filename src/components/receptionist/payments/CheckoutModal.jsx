@@ -640,7 +640,7 @@ export default function CheckoutModal({
         </div>
       </Modal>
 
-      <Modal isOpen={showNumpadModal} onClose={() => setShowNumpadModal(false)}>
+      {/* <Modal isOpen={showNumpadModal} onClose={() => setShowNumpadModal(false)}>
         <div className="bg-slate-950 rounded-xl overflow-hidden border-2 border-slate-800 shadow-2xl">
           <div className="px-6 py-5 border-b border-slate-800 text-center bg-slate-900/60">
             <h3 className="text-xs font-bold uppercase tracking-widest text-amber-500">
@@ -661,7 +661,7 @@ export default function CheckoutModal({
             />
           </div>
         </div>
-      </Modal>
+      </Modal> */}
     </>
   );
 }

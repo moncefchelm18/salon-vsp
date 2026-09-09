@@ -24,7 +24,7 @@ export default function CafeSettings() {
 
   // --- ÉTATS DU FORMULAIRE DE CONFIGURATION ---
   const [formData, setFormData] = useState({
-    receiptHeader: "SALLON PICASSO - ESPACE CAFÉ",
+    receiptHeader: "SALON VSP - ESPACE CAFÉ",
     receiptPhone: "0550 XX XX XX",
     receiptFooter: "Merci pour votre visite ! Bon appétit !",
     defaultTaxRate: "19", // TVA par défaut en Algérie (19% ou 9% selon les produits)

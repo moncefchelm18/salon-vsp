@@ -13,49 +13,48 @@ import {
   TrendingDown,
   AlertOctagon,
   Edit,
-  Tag,
-  Sliders,
   History,
+  Sliders,
+  Tag,
   Minus,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../../utils/api";
+import { useAuth } from "../../../context/AuthContext";
 
 import Button from "../../../components/common/Button";
 import DataTable from "../../../components/common/DataTable";
 import Modal from "../../../components/common/Modal";
 import Input from "../../../components/common/Input";
 import ColorfulStatCard from "../../../components/common/ColorfulStatCard";
-import { useAuth } from "../../../context/AuthContext";
 
 export default function CafeStock() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("inventory"); // 'inventory' or 'receptions'
+  const [activeTab, setActiveTab] = useState("inventory"); // 'inventory', 'receptions', 'adjustments'
   const [receptions, setReceptions] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [catalog, setCatalog] = useState([]);
+  const [stockStats, setStockStats] = useState(null);
+  const [adjustments, setAdjustments] = useState([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [searchTerm, setSearchTerm] = useState("");
 
   // Create/Edit Draft Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBRId, setEditingBRId] = useState(null); // NULL = creation, Number = modification
+  const [editingBRId, setEditingBRId] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState("");
-  const [deliveryNoteRef, setDeliveryNoteRef] = useState(""); // N° Bon de Livraison
+  const [deliveryNoteRef, setDeliveryNoteRef] = useState("");
   const [orderItems, setOrderItems] = useState([]);
-  // Discount States
-  const [discountType, setDiscountType] = useState("amount"); // "amount" (DZD) ou "percent" (%)
+  const [discountType, setDiscountType] = useState("amount");
   const [discountValue, setDiscountValue] = useState("");
 
   // View Details Modal States
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewingBR, setViewingBR] = useState(null);
 
-  const [stockStats, setStockStats] = useState(null);
-
-  const [adjustments, setAdjustments] = useState([]);
+  // Stock Adjustment States
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [productToAdjust, setProductToAdjust] = useState(null);
   const [adjustData, setAdjustData] = useState({
@@ -72,15 +71,15 @@ export default function CafeStock() {
         api.get("/cafe/suppliers"),
         api.get("/cafe/products"),
         api.get("/cafe/stock/stats"),
-        api.get("/cafe/stock/adjustments"), // <-- NOUVEL APPEL
+        api.get("/cafe/stock/adjustments"),
       ]);
-      setReceptions(recRes.data);
-      setSuppliers(supRes.data);
-      setCatalog(catRes.data);
-      setStockStats(statsRes.data);
-      setAdjustments(adjRes.data); // <-- SAUVEGARDE DE L'HISTORIQUE
+      setReceptions(recRes.data || []);
+      setSuppliers(supRes.data || []);
+      setCatalog(catRes.data || []);
+      setStockStats(statsRes.data || null);
+      setAdjustments(adjRes.data || []);
     } catch (err) {
-      toast.error("Erreur de synchronisation");
+      toast.error("Erreur de synchronisation du stock.");
     } finally {
       setIsLoading(false);
     }
@@ -91,14 +90,12 @@ export default function CafeStock() {
   }, []);
 
   const formatStock = (totalQty, nuc, unitName = "Colis", isTracked) => {
-    if (!isTracked) {
+    if (!isTracked)
       return (
         <span className="text-t-muted text-xs font-bold uppercase italic">
-          Non Suivi (Service)
+          Service
         </span>
       );
-    }
-
     if (nuc <= 1) return `${totalQty} Unité(s)`;
     const fullPackages = Math.floor(totalQty / nuc);
     const leftovers = totalQty % nuc;
@@ -112,7 +109,7 @@ export default function CafeStock() {
     );
   };
 
-  // --- ACTIONS DU PANIER (Brouillon) ---
+  // --- ACTIONS DU PANIER (Bons de Réception) ---
   const addLine = () =>
     setOrderItems([
       ...orderItems,
@@ -124,41 +121,21 @@ export default function CafeStock() {
 
   const updateLine = (index, field, value) => {
     const newItems = [...orderItems];
-
-    // Si l'utilisateur vient de choisir un nouveau Produit depuis la liste déroulante
     if (field === "productId") {
       newItems[index].productId = value;
-
-      // Si un produit est bien sélectionné, on va chercher son "Prix d'Achat" dans le catalogue
       if (value) {
-        const productFromCatalog = catalog.find((p) => p.id === Number(value));
-        if (productFromCatalog) {
-          // On injecte automatiquement le prix d'achat enregistré dans la base de données
-          newItems[index].unitCost = productFromCatalog.purchasePrice || 0;
-        }
+        const p = catalog.find((prod) => prod.id === Number(value));
+        newItems[index].unitCost = p?.purchasePrice || 0;
       } else {
-        // S'il remet sur "Sélectionner un produit...", on remet le prix à 0
         newItems[index].unitCost = 0;
       }
     } else {
-      // Pour tous les autres champs (qtyColis, qtyUnite, ou une modification manuelle du unitCost)
       newItems[index][field] = value;
     }
-
     setOrderItems(newItems);
   };
 
-  /* const calculateTotal = () => {
-  //   return orderItems.reduce((sum, item) => {
-  //     const prod = catalog.find((p) => p.id === Number(item.productId));
-  //     const nuc = prod?.nuc || 1;
-  //     const safeColis = Number(item.qtyColis) || 0;
-  //     const safeUnite = Number(item.qtyUnite) || 0;
-  //     const totalQty = safeColis * nuc + safeUnite;
-  //     const cost = parseFloat(item.unitCost) || 0;
-  //     return sum + totalQty * cost;
-  //   }, 0);
-  // }; */
+  // Calcul mathématique infaillible
   const getCalculatedTotals = () => {
     const subTotal = orderItems.reduce((sum, item) => {
       const prod = catalog.find((p) => p.id === Number(item.productId));
@@ -179,50 +156,46 @@ export default function CafeStock() {
     }
 
     const grandTotal = Math.max(0, subTotal - discountAmount);
-
     return { subTotal, discountAmount, grandTotal };
-  };
-  // --- OUVRIR LA MODAL EN MODE ÉDITION (✏️) ---
-  const handleOpenEditModal = (br) => {
-    setEditingBRId(br.id);
-    setSelectedSupplier(br.supplierId.toString());
-    setDeliveryNoteRef(br.deliveryNoteRef || "");
-
-    // RÉTRO-CALCUL : Transformer la quantité absolue en Colis + Unités
-    const mappedItems = br.items.map((item) => {
-      const product = catalog.find((p) => p.id === item.productId);
-      const nuc = product?.nuc || 1;
-      const qtyColis = Math.floor(item.quantity / nuc);
-      const qtyUnite = item.quantity % nuc;
-
-      return {
-        productId: item.productId.toString(),
-        qtyColis: qtyColis,
-        qtyUnite: qtyUnite,
-        unitCost: item.unitCost,
-      };
-    });
-
-    setOrderItems(mappedItems);
-    setIsModalOpen(true);
-    setDiscountType("amount"); // On repasse en fixe pour l'édition
-    setDiscountValue(br.discount > 0 ? br.discount.toString() : "");
   };
 
   const handleOpenCreateModal = () => {
     setEditingBRId(null);
     setSelectedSupplier("");
     setDeliveryNoteRef("");
-    setOrderItems([{ productId: "", qtyColis: 0, qtyUnite: 0, unitCost: 0 }]);
-    setIsModalOpen(true);
     setDiscountType("amount");
     setDiscountValue("");
+    setOrderItems([{ productId: "", qtyColis: 0, qtyUnite: 0, unitCost: 0 }]);
+    setIsModalOpen(true);
   };
 
-  // --- CRÉATION / MODIFICATION BROUILLON ---
+  const handleOpenEditModal = (br) => {
+    setEditingBRId(br.id);
+    setSelectedSupplier(br.supplierId.toString());
+    setDeliveryNoteRef(br.deliveryNoteRef || "");
+    setDiscountType("amount");
+    setDiscountValue(br.discount > 0 ? br.discount.toString() : "");
+
+    const mappedItems = br.items.map((item) => {
+      const product = catalog.find((p) => p.id === item.productId);
+      const nuc = product?.nuc || 1;
+      return {
+        productId: item.productId.toString(),
+        qtyColis: Math.floor(item.quantity / nuc),
+        qtyUnite: item.quantity % nuc,
+        unitCost: item.unitCost,
+      };
+    });
+
+    setOrderItems(mappedItems);
+    setIsModalOpen(true);
+  };
+
   const handleSaveDraft = async () => {
     if (!selectedSupplier || orderItems.length === 0)
-      return toast.error("Complétez le bon avant de sauvegarder.");
+      return toast.error(
+        "Veuillez sélectionner un fournisseur et compléter le bon.",
+      );
 
     if (orderItems.some((i) => !i.productId))
       return toast.error("Veuillez sélectionner un produit pour chaque ligne.");
@@ -234,10 +207,9 @@ export default function CafeStock() {
         const nuc = prod?.nuc || 1;
         const safeColis = Number(item.qtyColis) || 0;
         const safeUnite = Number(item.qtyUnite) || 0;
-        const absoluteTotalQuantity = safeColis * nuc + safeUnite;
         return {
           productId: Number(item.productId),
-          quantity: absoluteTotalQuantity,
+          quantity: safeColis * nuc + safeUnite,
           unitCost: parseFloat(item.unitCost) || 0,
         };
       });
@@ -245,11 +217,11 @@ export default function CafeStock() {
       if (formattedItems.some((i) => i.quantity <= 0)) {
         setIsSubmitting(false);
         return toast.error(
-          "La quantité totale d'une ligne ne peut pas être 0.",
+          "La quantité d'une ligne ne peut pas être égale à 0.",
         );
       }
-      const totals = getCalculatedTotals();
 
+      const totals = getCalculatedTotals();
       const payload = {
         supplierId: Number(selectedSupplier),
         deliveryNoteRef: deliveryNoteRef.trim() || null,
@@ -258,26 +230,22 @@ export default function CafeStock() {
       };
 
       if (editingBRId) {
-        // Mode Modification
         await api.put(`/cafe/stock/${editingBRId}`, payload);
-        toast.success("Brouillon mis à jour");
+        toast.success("Brouillon mis à jour !");
       } else {
-        // Mode Création
         await api.post("/cafe/stock", payload);
-        toast.success("Bon créé en brouillon");
+        toast.success("Bon créé en brouillon !");
       }
 
       setIsModalOpen(false);
-      setOrderItems([]);
       loadData();
     } catch (e) {
-      toast.error("Erreur de sauvegarde du bon.");
+      toast.error(e.response?.data?.message || "Erreur de sauvegarde.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- WORKFLOW ACTIONS ---
   const handleValidate = async (id) => {
     if (
       !window.confirm(
@@ -290,12 +258,12 @@ export default function CafeStock() {
       toast.success("Stock injecté avec succès !");
       loadData();
     } catch (e) {
-      toast.error("Erreur de validation");
+      toast.error(e.response?.data?.message || "Erreur de validation");
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Supprimer ce brouillon définitivement ?")) return;
+    if (!window.confirm("Supprimer définitivement ce brouillon ?")) return;
     try {
       await api.delete(`/cafe/stock/${id}`);
       toast.success("Brouillon supprimé.");
@@ -322,7 +290,7 @@ export default function CafeStock() {
   };
 
   const handleArchive = async (id) => {
-    if (!window.confirm("Archiver ce bon de retour ?")) return;
+    if (!window.confirm("Archiver ce bon ?")) return;
     try {
       await api.patch(`/cafe/stock/${id}/archive`);
       toast.success("Bon archivé.");
@@ -333,7 +301,6 @@ export default function CafeStock() {
   };
 
   const handleViewDetails = (reception) => {
-    // On trouve les produits du catalogue pour lier les détails avant d'ouvrir
     const enrichedItems = reception.items.map((item) => {
       const prod = catalog.find((p) => p.id === item.productId);
       return { ...item, productName: prod?.name || "Produit Inconnu" };
@@ -341,76 +308,70 @@ export default function CafeStock() {
     setViewingBR({ ...reception, items: enrichedItems });
     setIsViewModalOpen(true);
   };
-  // --- ENREGISTRER UN AJUSTEMENT DE STOCK (PERTES / CORRECTION) ---
+
   const handleSubmitAdjustment = async (e) => {
     e.preventDefault();
     const qty = parseInt(adjustData.quantity, 10);
-    if (isNaN(qty) || qty <= 0)
-      return toast.error("Veuillez saisir une quantité supérieure à 0.");
-    if (!adjustData.reason.trim())
-      return toast.error("Le motif d'ajustement est obligatoire.");
+    if (isNaN(qty) || qty <= 0) return toast.error("Quantité invalide.");
 
     setIsSubmitting(true);
     try {
-      // Si c'est un retrait (minus), on envoie une quantité négative au serveur !
       const calculatedQty = adjustData.type === "minus" ? -qty : qty;
-
       await api.post("/cafe/stock/adjust", {
         productId: productToAdjust.id,
         quantity: calculatedQty,
         reason: adjustData.reason,
-        username: user?.username || "System", // Nom du caissier connecté
+        username: user?.username || "System",
       });
-
-      toast.success("Ajustement de stock enregistré avec succès !");
+      toast.success("Ajustement de stock enregistré !");
       setIsAdjustModalOpen(false);
       setProductToAdjust(null);
-      setAdjustData({ quantity: "", reason: "Périmé / Jeté", type: "minus" }); // Reset
-      loadData(); // Rafraîchir les tableaux et les stats réelles !
+      setAdjustData({ quantity: "", reason: "Périmé / Jeté", type: "minus" });
+      loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Erreur d'ajustement.");
     } finally {
       setIsSubmitting(false);
     }
   };
+
   return (
     <div className="space-y-6">
-      {/* NAVIGATION TABS (Boutons solides comme dans SalonManager) */}
-      <div className="flex border-b border-subtle bg-surface/50 -mt-8 -mx-8 px-8 mb-6">
+      {/* ── NAVIGATION TABS (Boutons solides) ── */}
+      <div className="flex gap-2 p-1 bg-surface border border-subtle w-fit">
         <button
           onClick={() => setActiveTab("inventory")}
-          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
+          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
             activeTab === "inventory"
-              ? "border-b-2 border-brand text-brand bg-brand/5"
-              : "text-t-muted hover:text-t-main"
+              ? "bg-brand text-white shadow-md"
+              : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <Box size={16} /> État des Stocks
+          <Box className="w-5 h-5" /> État des Stocks
         </button>
         <button
           onClick={() => setActiveTab("receptions")}
-          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
+          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
             activeTab === "receptions"
-              ? "border-b-2 border-brand text-brand bg-brand/5"
-              : "text-t-muted hover:text-t-main"
+              ? "bg-brand text-white shadow-md"
+              : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <ClipboardList size={16} /> Bons de Réception
+          <ClipboardList className="w-5 h-5" /> Bons de Réception
         </button>
-
-        {/* --- NOUVEL ONGLET : HISTORIQUE DES PERTES --- */}
         <button
           onClick={() => setActiveTab("adjustments")}
-          className={`flex items-center gap-2 px-6 py-4 text-xs font-bold tracking-widest uppercase transition-all ${
+          className={`flex items-center gap-2 px-6 py-3 font-bold transition-colors ${
             activeTab === "adjustments"
-              ? "border-b-2 border-brand text-brand bg-brand/5"
-              : "text-t-muted hover:text-t-main"
+              ? "bg-brand text-white shadow-md"
+              : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <History size={16} /> Historique des Pertes
+          <History className="w-5 h-5" /> Historique des Pertes
         </button>
       </div>
-      {/* STATS ROW */}
+
+      {/* ── STATS ROW ── */}
       {stockStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <ColorfulStatCard
@@ -440,18 +401,22 @@ export default function CafeStock() {
         </div>
       )}
 
-      {/* HEADER ACTIONS */}
+      {/* ── HEADER ACTIONS ── */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 p-6 bg-surface border border-subtle shadow-sm">
         <div>
-          <h2 className="text-2xl font-bold text-t-main flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-t-main">
             {activeTab === "inventory"
               ? "Inventaire Réel"
-              : "Gestion Documentaire"}
+              : activeTab === "receptions"
+                ? "Gestion Documentaire des Achats"
+                : "Registre des Pertes & Usages"}
           </h2>
           <p className="text-t-muted text-sm mt-1">
             {activeTab === "inventory"
               ? "État actuel des marchandises en magasin."
-              : "Créez et gérez vos bons d'achats fournisseurs."}
+              : activeTab === "receptions"
+                ? "Créez et validez les livraisons de vos grossistes."
+                : "Historique des articles jetés ou consommés en interne."}
           </p>
         </div>
 
@@ -464,35 +429,18 @@ export default function CafeStock() {
             <Plus size={18} /> Nouveau Bon de Réception
           </Button>
         )}
-
-        {activeTab === "inventory" && (
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-t-muted"
-            />
-            <input
-              placeholder="Chercher un produit..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-main border border-subtle text-t-main px-4 py-3 pl-10 text-sm font-bold w-64 focus:outline-none focus:border-brand shadow-inner"
-            />
-          </div>
-        )}
       </div>
 
-      {/* INVENTORY OR RECEPTIONS TABLE */}
+      {/* ── CONTENU DU TABLEAU ── */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center text-brand space-y-4">
           <RefreshCcw className="w-10 h-10 animate-spin" />
-          <span className="font-bold text-lg">
-            Chargement de la base de données...
-          </span>
+          <span className="font-bold text-lg">Synchronisation du stock...</span>
         </div>
       ) : activeTab === "inventory" ? (
         <DataTable
           headers={[
-            { label: "Image", sortable: false }, // <-- NOUVEL EN-TÊTE
+            { label: "Image", sortable: false },
             { label: "Référence" },
             { label: "Produit" },
             { label: "Catégorie" },
@@ -502,88 +450,83 @@ export default function CafeStock() {
             { label: "Actions", align: "right" },
           ]}
         >
-          {catalog
-            .filter((p) =>
-              p.name.toLowerCase().includes(searchTerm.toLowerCase()),
-            )
-            .map((p) => (
-              <tr
-                key={p.id}
-                className="border-b border-subtle hover:bg-brand/5 transition-colors"
-              >
-                <td className="px-6 py-2">
-                  <div className="w-10 h-10 bg-main border border-subtle flex justify-center items-center overflow-hidden">
-                    {p.image ? (
-                      <img
-                        src={p.image}
-                        alt={p.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-[8px] uppercase font-bold text-t-muted">
-                        Img
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4 font-mono font-bold text-sm text-t-muted">
-                  {p.reference || "--"}
-                </td>
-                <td className="px-6 py-4 font-bold text-t-main text-sm">
-                  {p.name}
-                </td>
-                <td className="px-6 py-4">
-                  <span className="bg-main border border-subtle px-2 py-1 text-xs font-bold text-t-muted uppercase">
-                    {p.category?.name}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-mono text-sm font-bold text-t-muted">
-                  x{p.nuc}
-                </td>
-                <td className="px-6 py-4">
-                  {formatStock(
-                    p.stock,
-                    p.nuc,
-                    p.packagingUnit?.name,
-                    p.isTracked,
-                  )}
-                </td>
-                <td className="px-6 py-4">
-                  {!p.isTracked ? (
-                    <span className="inline-block px-3 py-1 bg-blue-500/10 text-blue-600 border border-blue-500/20 font-bold text-xs shadow-sm">
-                      Service
-                    </span>
-                  ) : p.stock <= 0 ? (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-500/10 text-red-600 border border-red-500/20 font-bold text-xs shadow-sm">
-                      <AlertTriangle size={12} /> Rupture
-                    </span>
-                  ) : p.stock < p.nuc * 2 ? (
-                    <span className="inline-block px-3 py-1 bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold text-xs shadow-sm">
-                      Stock Faible
-                    </span>
+          {catalog.map((p) => (
+            <tr
+              key={p.id}
+              className="border-b border-subtle hover:bg-brand/5 transition-colors"
+            >
+              <td className="px-6 py-2">
+                <div className="w-10 h-10 bg-main border border-subtle flex justify-center items-center overflow-hidden">
+                  {p.image ? (
+                    <img
+                      src={p.image}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
-                    <span className="inline-block px-3 py-1 bg-green-500/10 text-green-600 border border-green-500/20 font-bold text-xs shadow-sm">
-                      Disponible
+                    <span className="text-[8px] uppercase font-bold text-t-muted">
+                      Img
                     </span>
                   )}
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setProductToAdjust(p);
-                      setIsAdjustModalOpen(true);
-                    }}
-                    className="py-1 px-3 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white transition-colors"
-                    title="Ajuster manuellement le stock de ce produit (Perte, Casse, Inventaire)"
-                  >
-                    <Sliders size={14} className="mr-1" /> Ajuster
-                  </Button>
-                </td>
-              </tr>
-            ))}
+                </div>
+              </td>
+              <td className="px-6 py-4 font-mono font-bold text-sm text-t-muted">
+                {p.reference || "--"}
+              </td>
+              <td className="px-6 py-4 font-bold text-t-main text-sm">
+                {p.name}
+              </td>
+              <td className="px-6 py-4">
+                <span className="bg-main border border-subtle px-2 py-1 text-xs font-bold text-t-muted uppercase">
+                  {p.category?.name}
+                </span>
+              </td>
+              <td className="px-6 py-4 font-mono text-sm font-bold text-t-muted">
+                x{p.nuc}
+              </td>
+              <td className="px-6 py-4">
+                {formatStock(
+                  p.stock,
+                  p.nuc,
+                  p.packagingUnit?.name,
+                  p.isTracked,
+                )}
+              </td>
+              <td className="px-6 py-4">
+                {!p.isTracked ? (
+                  <span className="inline-block px-3 py-1 bg-blue-500/10 text-blue-600 border border-blue-500/20 font-bold text-xs shadow-sm">
+                    Service
+                  </span>
+                ) : p.stock <= 0 ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-500/10 text-red-600 border border-red-500/20 font-bold text-xs shadow-sm">
+                    <AlertTriangle size={12} /> Rupture
+                  </span>
+                ) : p.stock < p.nuc * 2 ? (
+                  <span className="inline-block px-3 py-1 bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold text-xs shadow-sm">
+                    Faible
+                  </span>
+                ) : (
+                  <span className="inline-block px-3 py-1 bg-green-500/10 text-green-600 border border-green-500/20 font-bold text-xs shadow-sm">
+                    Disponible
+                  </span>
+                )}
+              </td>
+              <td className="px-6 py-4 text-right">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setProductToAdjust(p);
+                    setIsAdjustModalOpen(true);
+                  }}
+                  className="py-1 px-3 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white"
+                >
+                  <Sliders size={14} className="mr-1" /> Ajuster
+                </Button>
+              </td>
+            </tr>
+          ))}
         </DataTable>
-      ) : activeTab === "inventory" ? (
+      ) : activeTab === "receptions" ? (
         <DataTable
           headers={[
             { label: "Date" },
@@ -601,7 +544,7 @@ export default function CafeStock() {
                 colSpan="7"
                 className="text-center py-12 text-t-muted font-bold text-lg border border-subtle border-dashed bg-surface"
               >
-                Aucun Bon de Réception.
+                Aucun Bon de Réception enregistré.
               </td>
             </tr>
           ) : (
@@ -646,17 +589,16 @@ export default function CafeStock() {
                   <Button
                     variant="secondary"
                     onClick={() => handleViewDetails(r)}
-                    className="py-1 px-3 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white transition-colors"
+                    className="py-1 px-3 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white"
                   >
                     <Eye size={16} /> Voir
                   </Button>
-
                   {r.status === "draft" && (
                     <>
                       <Button
                         variant="secondary"
                         onClick={() => handleOpenEditModal(r)}
-                        className="py-1 px-3 text-xs bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500 hover:text-white transition-colors"
+                        className="py-1 px-3 text-xs bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500 hover:text-white"
                       >
                         <Edit size={16} /> Éditer
                       </Button>
@@ -664,36 +606,32 @@ export default function CafeStock() {
                         variant="success"
                         onClick={() => handleValidate(r.id)}
                         className="py-1 px-3 text-xs shadow-md"
-                        title="Valider et injecter le stock"
                       >
                         <FileCheck size={16} /> Valider
                       </Button>
                       <Button
                         variant="danger"
                         onClick={() => handleDelete(r.id)}
-                        className="py-1 px-3 text-xs bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white transition-colors"
+                        className="py-1 px-3 text-xs bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white"
                       >
                         <Trash2 size={16} />
                       </Button>
                     </>
                   )}
-
                   {r.status === "validated" && (
                     <Button
                       variant="danger"
                       onClick={() => handleReturn(r.id)}
-                      className="py-1 px-3 text-xs bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white transition-colors"
+                      className="py-1 px-3 text-xs bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white"
                     >
-                      <RefreshCcw size={14} className="mr-1" /> Retour
-                      Fournisseur
+                      <RefreshCcw size={14} className="mr-1" /> Retourner
                     </Button>
                   )}
                   {r.status === "returned" && (
                     <Button
                       variant="secondary"
                       onClick={() => handleArchive(r.id)}
-                      className="py-1 px-3 text-xs bg-slate-500/10 text-slate-500 border-slate-500/30 hover:bg-slate-500 hover:text-white transition-colors"
-                      title="Archiver"
+                      className="py-1 px-3 text-xs bg-slate-500/10 text-slate-500 border-slate-500/30 hover:bg-slate-500 hover:text-white"
                     >
                       <Trash2 size={16} /> Archiver
                     </Button>
@@ -704,7 +642,6 @@ export default function CafeStock() {
           )}
         </DataTable>
       ) : (
-        // --- NOUVEAU TABLEAU : JOURNAL DES PERTES / AJUSTEMENTS ---
         <DataTable
           headers={[
             { label: "Date de l'opération" },
@@ -730,18 +667,14 @@ export default function CafeStock() {
                 className="border-b border-subtle hover:bg-brand/5 transition-colors"
               >
                 <td className="px-6 py-4 text-xs font-mono font-bold text-t-muted">
-                  {new Date(adj.createdAt).toLocaleDateString("fr-FR")} à{" "}
-                  {new Date(adj.createdAt).toLocaleTimeString("fr-FR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {new Date(adj.createdAt).toLocaleDateString("fr-FR")}
                 </td>
                 <td className="px-6 py-4 font-bold text-t-main text-sm uppercase">
                   {adj.product?.name}
                 </td>
                 <td className="px-6 py-4">
                   <span
-                    className={`inline-block px-3 py-1 font-mono font-bold text-xs border rounded-none shadow-sm ${
+                    className={`inline-block px-3 py-1 font-mono font-bold text-xs border ${
                       adj.quantity < 0
                         ? "bg-red-500/10 text-red-500 border-red-500/20"
                         : "bg-green-500/10 text-green-500 border-green-500/20"
@@ -763,10 +696,10 @@ export default function CafeStock() {
         </DataTable>
       )}
 
-      {/* --- MODAL 1: VIEW DETAILS --- */}
+      {/* ── MODAL 1 : VOIR DÉTAILS D'UN BON ── */}
       <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)}>
         {viewingBR && (
-          <div className="p-8">
+          <div className="p-8 bg-surface">
             <div className="flex justify-between items-start border-b border-subtle pb-4 mb-6">
               <div>
                 <h3 className="text-2xl font-bold text-t-main uppercase tracking-widest">
@@ -825,7 +758,7 @@ export default function CafeStock() {
             {viewingBR.discount > 0 && (
               <div className="flex justify-between items-center p-3 mb-2 text-amber-500 border border-amber-500/30 bg-amber-500/10">
                 <span className="font-bold uppercase tracking-widest text-xs">
-                  Remise Fournisseur Appliquée
+                  Remise Fournisseur
                 </span>
                 <span className="font-mono font-bold text-lg">
                   - DZD {viewingBR.discount.toFixed(2)}
@@ -856,18 +789,20 @@ export default function CafeStock() {
         )}
       </Modal>
 
-      {/* --- MODAL 2: CREATE / EDIT DRAFT --- */}
+      {/* ── MODAL 2 : CRÉER / ÉDITER UN BROUILLON ── */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => !isSubmitting && setIsModalOpen(false)}
       >
-        <div className="p-8 max-h-[90vh] overflow-y-auto">
+        <div className="p-8 max-h-[90vh] overflow-y-auto bg-surface">
           <h3 className="text-2xl font-bold text-t-main mb-6 border-b border-subtle pb-4">
-            {editingBRId ? "Modifier le Brouillon" : "Nouveau Bon de Réception"}
+            {editingBRId
+              ? "Modifier le Brouillon BR"
+              : "Nouveau Bon de Réception"}
           </h3>
 
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-surface p-4 border border-subtle shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-main p-4 border border-subtle shadow-inner">
               <div>
                 <label className="block text-xs font-bold text-t-muted mb-2">
                   Fournisseur *
@@ -875,9 +810,9 @@ export default function CafeStock() {
                 <select
                   value={selectedSupplier}
                   onChange={(e) => setSelectedSupplier(e.target.value)}
-                  className="w-full bg-main border border-subtle text-t-main px-4 py-3 focus:outline-none focus:border-brand font-bold"
+                  className="w-full bg-surface border border-subtle text-t-main px-4 py-3 focus:outline-none focus:border-brand font-bold"
                 >
-                  <option value="">-- Choisir --</option>
+                  <option value="">-- Choisir Fournisseur --</option>
                   {suppliers.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -885,18 +820,17 @@ export default function CafeStock() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <Input
-                  label="N° Facture Papier (BL)"
+                  label="N° Facture / BL Papier"
                   value={deliveryNoteRef}
                   onChange={(e) => setDeliveryNoteRef(e.target.value)}
-                  placeholder="ex: BL-4092"
+                  placeholder="Ex: BL-4092"
                 />
               </div>
             </div>
 
-            <div className="space-y-3 bg-surface border border-subtle p-4 shadow-sm">
+            <div className="space-y-3 bg-main border border-subtle p-4 shadow-inner">
               <div className="flex justify-between items-center border-b border-subtle pb-3 mb-3">
                 <span className="text-sm font-bold text-t-main uppercase">
                   Détails des Articles
@@ -906,11 +840,6 @@ export default function CafeStock() {
                   onClick={addLine}
                   disabled={orderItems.length >= catalog.length}
                   className="text-xs py-2 px-4 shadow-md"
-                  title={
-                    orderItems.length >= catalog.length
-                      ? "Catalogue entier ajouté"
-                      : "Ajouter ligne"
-                  }
                 >
                   <Plus size={14} className="mr-1" /> Ajouter Ligne
                 </Button>
@@ -942,7 +871,7 @@ export default function CafeStock() {
                           onChange={(e) =>
                             updateLine(index, "productId", e.target.value)
                           }
-                          className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand"
+                          className="w-full bg-surface border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand"
                         >
                           <option value="">Sélectionner un produit...</option>
                           {catalog.map((p) => {
@@ -971,7 +900,7 @@ export default function CafeStock() {
                     </div>
 
                     {selectedProduct && (
-                      <div className="flex items-end gap-2 bg-main p-3 border border-subtle shadow-inner">
+                      <div className="flex items-end gap-2 bg-surface p-3 border border-subtle shadow-sm">
                         <div className="flex-1">
                           <label className="block text-[10px] font-bold text-brand uppercase mb-1">
                             Qté {colisName}
@@ -983,7 +912,7 @@ export default function CafeStock() {
                             onChange={(e) =>
                               updateLine(index, "qtyColis", e.target.value)
                             }
-                            className="w-full bg-surface border border-subtle text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
+                            className="w-full bg-main border border-subtle text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
                           />
                         </div>
                         <div className="pb-3 text-t-muted font-bold text-sm">
@@ -1000,7 +929,7 @@ export default function CafeStock() {
                             onChange={(e) =>
                               updateLine(index, "qtyUnite", e.target.value)
                             }
-                            className="w-full bg-surface border border-subtle text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
+                            className="w-full bg-main border border-subtle text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
                           />
                         </div>
                         <div className="pb-3 text-t-muted font-bold text-sm">
@@ -1010,7 +939,7 @@ export default function CafeStock() {
                           <label className="block text-[10px] font-bold text-t-muted uppercase mb-1">
                             Total Absolu
                           </label>
-                          <div className="w-full bg-surface border border-subtle text-t-muted px-3 py-2 text-sm font-mono font-bold text-center">
+                          <div className="w-full bg-main border border-subtle text-t-muted px-3 py-2 text-sm font-mono font-bold text-center">
                             {totalQty}
                           </div>
                         </div>
@@ -1025,7 +954,7 @@ export default function CafeStock() {
                             onChange={(e) =>
                               updateLine(index, "unitCost", e.target.value)
                             }
-                            className="w-full bg-surface border border-brand/50 text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
+                            className="w-full bg-main border border-brand/50 text-t-main px-3 py-2 font-bold font-mono text-sm focus:outline-none focus:border-brand"
                           />
                         </div>
                       </div>
@@ -1036,7 +965,7 @@ export default function CafeStock() {
             </div>
 
             <div className="pt-4 border-t border-subtle space-y-4">
-              {/* --- SECTION REMISE --- */}
+              {/* REMISE */}
               <div className="flex justify-between items-center bg-brand/10 p-3 border border-brand/30 shadow-inner">
                 <span className="text-sm font-bold text-brand flex items-center gap-2">
                   <Tag size={16} /> Remise Fournisseur
@@ -1061,8 +990,8 @@ export default function CafeStock() {
                 </div>
               </div>
 
-              {/* --- TOTAUX --- */}
-              <div className="flex justify-between items-end bg-surface p-4 border border-subtle">
+              {/* TOTAUX */}
+              <div className="flex justify-between items-end bg-main p-4 border border-subtle shadow-inner">
                 <div>
                   <div className="flex gap-4 text-xs font-bold text-t-muted mb-1">
                     <span>
@@ -1076,7 +1005,7 @@ export default function CafeStock() {
                     )}
                   </div>
                   <p className="text-3xl font-mono font-bold text-brand leading-none mt-2">
-                    Total: DZD {getCalculatedTotals().grandTotal.toFixed(2)}
+                    Total Net: DZD {getCalculatedTotals().grandTotal.toFixed(2)}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -1097,7 +1026,7 @@ export default function CafeStock() {
                       ? "Enregistrement..."
                       : editingBRId
                         ? "Mettre à jour"
-                        : "Sauvegarder Brouillon"}
+                        : "Créer Brouillon"}
                   </Button>
                 </div>
               </div>
@@ -1105,23 +1034,24 @@ export default function CafeStock() {
           </div>
         </div>
       </Modal>
-      {/* --- MODAL 3 : ENREGISTRER UN AJUSTEMENT DE STOCK --- */}
+
+      {/* ── MODAL 3 : ENREGISTRER UN AJUSTEMENT DE STOCK ── */}
       <Modal
         isOpen={isAdjustModalOpen}
         onClose={() => !isSubmitting && setIsAdjustModalOpen(false)}
       >
         {productToAdjust && (
-          <form onSubmit={handleSubmitAdjustment} className="p-8">
-            <h3 className="text-xl font-serif font-bold text-brand uppercase border-b border-subtle pb-4 mb-6">
-              Ajustement Manuel d'Inventaire
+          <form onSubmit={handleSubmitAdjustment} className="p-8 bg-surface">
+            <h3 className="text-2xl font-bold text-t-main mb-6 border-b border-subtle pb-4 flex items-center gap-2">
+              <Sliders className="text-brand" size={24} /> Ajuster le Stock
+              (Pertes / Usage)
             </h3>
-
             <div className="bg-main border border-subtle p-4 mb-6 flex justify-between items-center shadow-inner">
               <div>
                 <p className="text-[10px] uppercase font-bold text-t-muted">
-                  Produit à ajuster
+                  Produit
                 </p>
-                <p className="font-bold text-t-main uppercase text-sm">
+                <p className="font-bold text-t-main uppercase text-sm mt-0.5">
                   {productToAdjust.name}
                 </p>
               </div>
@@ -1134,42 +1064,29 @@ export default function CafeStock() {
                 </p>
               </div>
             </div>
-
             <div className="space-y-4">
-              {/* Type d'opération (Boutons solides + haptiques tactiles) */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
-                  Type d'ajustement
-                </label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={adjustData.type === "minus" ? "danger" : "outline"}
-                    onClick={() =>
-                      setAdjustData({ ...adjustData, type: "minus" })
-                    }
-                    className="flex-1 py-3"
-                  >
-                    <Minus size={14} className="mr-1" /> Retrait (Perte / Casse
-                    / Usage)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={adjustData.type === "plus" ? "success" : "outline"}
-                    onClick={() =>
-                      setAdjustData({ ...adjustData, type: "plus" })
-                    }
-                    className="flex-1 py-3"
-                  >
-                    <Plus size={14} className="mr-1" /> Ajout (Inventaire
-                    correction)
-                  </Button>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant={adjustData.type === "minus" ? "danger" : "outline"}
+                  onClick={() =>
+                    setAdjustData({ ...adjustData, type: "minus" })
+                  }
+                  className="py-3"
+                >
+                  <Minus size={14} className="mr-1" /> Retrait (Perte / Casse)
+                </Button>
+                <Button
+                  type="button"
+                  variant={adjustData.type === "plus" ? "success" : "outline"}
+                  onClick={() => setAdjustData({ ...adjustData, type: "plus" })}
+                  className="py-3"
+                >
+                  <Plus size={14} className="mr-1" /> Ajout (Correction)
+                </Button>
               </div>
-
-              {/* Quantité d'unités */}
               <Input
-                label="Nombre d'unités réelles à ajuster *"
+                label="Quantité d'unités *"
                 type="number"
                 min="1"
                 value={adjustData.quantity}
@@ -1177,14 +1094,11 @@ export default function CafeStock() {
                   setAdjustData({ ...adjustData, quantity: e.target.value })
                 }
                 required
-                placeholder="Ex: 5"
                 autoFocus
               />
-
-              {/* Motif de l'ajustement */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
-                  Motif de l'ajustement *
+                <label className="block text-xs font-bold text-t-muted mb-2">
+                  Motif *
                 </label>
                 <select
                   value={adjustData.reason}
@@ -1192,7 +1106,6 @@ export default function CafeStock() {
                     setAdjustData({ ...adjustData, reason: e.target.value })
                   }
                   className="w-full bg-main border border-subtle text-t-main px-4 py-3 focus:outline-none focus:border-brand font-bold text-xs uppercase"
-                  required
                 >
                   <option value="Périmé / Jeté">
                     Périmé / Jeté (DLC courte)
@@ -1201,24 +1114,23 @@ export default function CafeStock() {
                     Casse / Bouteille brisée
                   </option>
                   <option value="Consommation interne (Staff)">
-                    Consommation interne (Barista / Staff)
+                    Consommation Staff
                   </option>
                   <option value="Consommation interne (Bar/Service)">
-                    Consommation Bar (Gobelets, Sucres, Pailles)
+                    Consommation Bar (Gobelets, Sucres)
                   </option>
                   <option value="Correction d'inventaire physique">
-                    Correction de comptage d'inventaire
+                    Correction d'inventaire physique
                   </option>
                 </select>
               </div>
-
-              {/* Pied de la modale */}
-              <div className="grid grid-cols-2 gap-4 pt-6 mt-6 border-t border-subtle">
+              <div className="grid grid-cols-2 gap-4 pt-6 border-t border-subtle">
                 <Button
                   variant="outline"
                   type="button"
                   onClick={() => setIsAdjustModalOpen(false)}
                   disabled={isSubmitting}
+                  className="py-4 font-bold"
                 >
                   Annuler
                 </Button>
@@ -1226,10 +1138,9 @@ export default function CafeStock() {
                   variant={adjustData.type === "minus" ? "danger" : "success"}
                   type="submit"
                   disabled={isSubmitting}
+                  className="py-4 font-bold"
                 >
-                  {isSubmitting
-                    ? "Enregistrement..."
-                    : "Confirmer l'Ajustement"}
+                  Confirmer
                 </Button>
               </div>
             </div>

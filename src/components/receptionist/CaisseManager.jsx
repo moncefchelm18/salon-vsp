@@ -7,9 +7,12 @@ import {
   RefreshCcw,
   AlertTriangle,
   CheckCircle,
-  Clock,
   Eye,
+  Clock,
+  Banknote,
+  Check,
   Search,
+  X, // <-- AJOUT DE CES 3 ICÔNES
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -51,24 +54,38 @@ export default function CaisseManager() {
   const [printData, setPrintData] = useState(null);
   const [printTrigger, setPrintTrigger] = useState(0);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const [pendingPayouts, setPendingPayouts] = useState([]);
+
+  const loadData = async (isInitial = false) => {
+    if (isInitial) setIsLoading(true); // Afficher le spinner UNIQUEMENT au premier chargement
+
     try {
-      const [currRes, histRes] = await Promise.all([
+      const [currRes, histRes, payoutsRes] = await Promise.all([
         api.get("/caisse/current"),
         api.get("/caisse/history"),
+        api.get("/barbers/payouts/pending"),
       ]);
       setCurrentTill(currRes.data);
       setHistory(histRes.data);
+      setPendingPayouts(payoutsRes.data);
     } catch (err) {
-      toast.error("Erreur de synchronisation caisse");
+      // On n'affiche le toast d'erreur que si c'est le chargement initial pour éviter de polluer l'écran
+      if (isInitial) toast.error("Erreur de synchronisation caisse");
     } finally {
-      setIsLoading(false);
+      if (isInitial) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true); // 1. Premier chargement visible avec spinner
+
+    // 2. Synchronisation silencieuse toutes les 5 secondes (isInitial = false)
+    // L'écran reste 100% immobile et stable, les chiffres se mettent à jour en douceur !
+    const interval = setInterval(() => {
+      loadData(false);
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleOpenTill = async (e) => {
@@ -88,7 +105,45 @@ export default function CaisseManager() {
       toast.error("Échec de l'ouverture.");
     }
   };
+  // --- APPROUVER LE RETRAIT (DONNER L'ARGENT PHYSIQUE) ---
+  const handleApprovePayout = async (payout) => {
+    if (
+      !window.confirm(
+        `Donner DZD ${payout.amount.toFixed(2)} en espèces à ${payout.barber?.name} ? Cette somme sera déduite du tiroir-caisse.`,
+      )
+    )
+      return;
 
+    try {
+      await api.patch(`/barbers/payouts/${payout.id}/approve`, {
+        processedBy: user?.username || "Réception",
+      });
+      toast.success(
+        `Retrait de ${payout.amount} DZD validé pour ${payout.barber?.name} !`,
+      );
+      loadData(); // Actualise immédiatement le solde du tiroir et retire la carte !
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Erreur lors de l'approbation.",
+      );
+    }
+  };
+
+  // --- REJETER LA DEMANDE DU COIFFEUR ---
+  const handleRejectPayout = async (payout) => {
+    if (!window.confirm(`Rejeter la demande de ${payout.barber?.name} ?`))
+      return;
+
+    try {
+      await api.patch(`/barbers/payouts/${payout.id}/reject`, {
+        processedBy: user?.username || "Réception",
+      });
+      toast.success("Demande de retrait refusée.");
+      loadData();
+    } catch (err) {
+      toast.error("Erreur lors du rejet.");
+    }
+  };
   const handleAddTransaction = async (e) => {
     e.preventDefault();
     if (!adjAmount || parseFloat(adjAmount) <= 0)
@@ -338,6 +393,73 @@ export default function CaisseManager() {
                 ))
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          PANNEAU D'APPROBATION DES RETRAITS COIFFEURS (EN DIRECT)
+      ═══════════════════════════════════════════════════════ */}
+      {pendingPayouts.length > 0 && currentTill && (
+        <div className="bg-surface border-2 border-amber-500 shadow-xl p-6 relative overflow-hidden animate-in fade-in duration-300">
+          <div className="absolute top-0 left-0 w-2 h-full bg-amber-500 animate-pulse"></div>
+
+          <div className="flex justify-between items-center mb-4 border-b border-subtle pb-3">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2">
+                <Banknote size={18} /> Demandes de Rémunération en Attente (
+                {pendingPayouts.length})
+              </h3>
+              <p className="text-xs text-t-muted font-bold mt-1">
+                Les coiffeurs réclament leurs commissions. Donnez les billets
+                physiquement avant de valider.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingPayouts.map((p) => (
+              <div
+                key={p.id}
+                className="bg-main border border-subtle p-4 flex flex-col justify-between shadow-sm space-y-4"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-t-main text-base uppercase">
+                      {p.barber?.name}
+                    </p>
+                    <p className="text-[10px] text-t-muted font-mono mt-0.5">
+                      Demandé à{" "}
+                      {new Date(p.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                  <span className="text-xl font-mono font-black text-amber-500">
+                    DZD {p.amount.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Boutons d'action solides */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="danger"
+                    onClick={() => handleRejectPayout(p)}
+                    className="py-2.5 px-3 text-xs flex-1"
+                  >
+                    <X size={14} className="mr-1" /> Rejeter
+                  </Button>
+                  <Button
+                    variant="success"
+                    onClick={() => handleApprovePayout(p)}
+                    className="py-2.5 px-4 text-xs font-bold flex-1 shadow-md"
+                  >
+                    <Check size={14} className="mr-1" /> Donner l'argent
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

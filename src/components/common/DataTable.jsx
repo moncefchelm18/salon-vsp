@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
-  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   X,
   Filter,
   Search,
@@ -25,22 +28,32 @@ const extractText = (node) => {
   return "";
 };
 
-export default function DataTable({ title, headers, children }) {
+export default function DataTable({
+  title,
+  headers,
+  children,
+  defaultPageSize = 10,
+  enablePagination = true,
+}) {
   // --- ÉTATS DU TRI (SORT) ---
   const [sortColIndex, setSortColIndex] = useState(null);
   const [sortDirection, setSortDirection] = useState("asc");
 
   // --- ÉTATS DU FILTRAGE DE DATE ---
   const [showFilterBar, setShowFilterBar] = useState(false);
-  const [filterType, setFilterType] = useState("all"); // 'all', 'today', 'week', 'month', 'year', 'custom'
-  const [startDate, setStartDate] = useState(""); // YYYY-MM-DD
-  const [endDate, setEndDate] = useState(""); // YYYY-MM-DD
+  const [filterType, setFilterType] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   // --- ÉTAT RECHERCHE TEXTUELLE ---
   const [searchTerm, setSearchTerm] = useState("");
 
   // --- ÉTAT DES FILTRES DE COLONNES DYNAMIQUES ---
-  const [columnFilters, setColumnFilters] = useState({}); // ex: { 2: "waiting" }
+  const [columnFilters, setColumnFilters] = useState({});
+
+  // ── ÉTATS DE PAGINATION ──
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(defaultPageSize);
 
   const handleHeaderClick = (index, h) => {
     if (h.sortable === false || h.label.toLowerCase() === "actions") return;
@@ -61,12 +74,13 @@ export default function DataTable({ title, headers, children }) {
         lbl.includes("date") ||
         lbl.includes("arrivé") ||
         lbl.includes("clôturé") ||
-        lbl.includes("le")
+        lbl.includes("le") ||
+        lbl.includes("heure")
       );
     });
   }, [headers]);
 
-  // --- EXTRAIRE TOUTES LES OPTIONS UNIQUES POUR LE MENU DÉROULANT ---
+  // Options uniques pour les filtres déroulants
   const columnUniqueValues = useMemo(() => {
     const rowsArray = React.Children.toArray(children);
     const map = {};
@@ -76,10 +90,12 @@ export default function DataTable({ title, headers, children }) {
       if (
         lbl === "actions" ||
         lbl === "montant" ||
+        lbl === "montant net" ||
         lbl === "total" ||
         lbl === "prix total" ||
         lbl.includes("date") ||
         lbl.includes("le") ||
+        lbl.includes("heure") ||
         lbl.includes("arrivé")
       ) {
         return;
@@ -100,30 +116,27 @@ export default function DataTable({ title, headers, children }) {
     return map;
   }, [children, headers]);
 
-  // --- LE MOTEUR CONSOLIDÉ DE FILTRAGE ET DE TRI (PIPELINE CUMULATIF) ---
+  // --- MOTEUR DE FILTRAGE ET DE TRI ---
   const processedRows = useMemo(() => {
-    // Étape de départ : On prend toutes les lignes brutes
     let result = React.Children.toArray(children);
 
-    // ÉTAPE 1 : FILTRAGE PAR RECHERCHE TEXTUELLE GLOBALE
+    // 1. Recherche globale
     if (searchTerm.trim() !== "") {
       const query = searchTerm.toLowerCase();
       result = result.filter((row) => {
         const cells = React.Children.toArray(row.props.children);
-        // On fusionne le texte de toutes les cellules de la ligne
         const rowText = cells.map(extractText).join(" ").toLowerCase();
         return rowText.includes(query);
       });
     }
 
-    // ÉTAPE 2 : FILTRAGE PAR DATE (Appliqué sur le résultat de l'étape 1)
+    // 2. Filtre par Date
     if (dateColIndex !== -1 && filterType !== "all") {
       result = result.filter((row) => {
         const cells = React.Children.toArray(row.props.children);
         const rawText = extractText(cells[dateColIndex]).trim();
 
         let rowDate = null;
-
         const dateMatch = rawText.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
         if (dateMatch) {
           rowDate = new Date(
@@ -141,26 +154,20 @@ export default function DataTable({ title, headers, children }) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        if (filterType === "today") {
+        if (filterType === "today")
           return rowDate.getTime() === today.getTime();
-        }
-
         if (filterType === "week") {
           const weekAgo = new Date(today);
           weekAgo.setDate(today.getDate() - 7);
           return rowDate >= weekAgo && rowDate <= today;
         }
-
         if (filterType === "month") {
           const monthAgo = new Date(today);
           monthAgo.setMonth(today.getMonth() - 1);
           return rowDate >= monthAgo && rowDate <= today;
         }
-
-        if (filterType === "year") {
+        if (filterType === "year")
           return rowDate.getFullYear() === today.getFullYear();
-        }
-
         if (filterType === "custom") {
           let keepRow = true;
           if (startDate) {
@@ -185,12 +192,11 @@ export default function DataTable({ title, headers, children }) {
           }
           return keepRow;
         }
-
         return true;
       });
     }
 
-    // ÉTAPE 3 : FILTRAGE PAR COLONNES DYNAMIQUES (Appliqué sur le résultat de l'étape 2)
+    // 3. Filtre de Colonnes
     Object.entries(columnFilters).forEach(([colIdxStr, selectedValue]) => {
       const colIdx = parseInt(colIdxStr, 10);
       if (!selectedValue || selectedValue === "all") return;
@@ -202,7 +208,7 @@ export default function DataTable({ title, headers, children }) {
       });
     });
 
-    // ÉTAPE 4 : TRI DES LIGNES RESTANTES (Appliqué sur le résultat final filtré)
+    // 4. Tri
     if (sortColIndex === null) return result;
 
     return [...result].sort((a, b) => {
@@ -236,7 +242,31 @@ export default function DataTable({ title, headers, children }) {
     searchTerm,
   ]);
 
-  // Déterminer s'il y a des filtres actifs
+  // ── GESTION DE LA PAGINATION ──
+  const totalRows = processedRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+
+  // Réinitialiser à la page 1 si un filtre est modifié
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType, startDate, endDate, columnFilters, rowsPerPage]);
+
+  // Sécurité pour éviter d'être sur une page inexistante
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  // Découpage des lignes affichées pour la page en cours
+  const paginatedRows = useMemo(() => {
+    if (!enablePagination) return processedRows;
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    return processedRows.slice(startIndex, startIndex + rowsPerPage);
+  }, [processedRows, currentPage, rowsPerPage, enablePagination]);
+
+  const startIndex = (currentPage - 1) * rowsPerPage;
+
   const isAnyFilterActive = useMemo(() => {
     const hasActiveDate = filterType !== "all";
     const hasActiveCol = Object.values(columnFilters).some(
@@ -246,7 +276,7 @@ export default function DataTable({ title, headers, children }) {
   }, [filterType, columnFilters, searchTerm]);
 
   return (
-    <div className="bg-surface border border-subtle overflow-hidden theme-transition shadow-sm rounded-none">
+    <div className="bg-surface border border-subtle overflow-hidden theme-transition shadow-sm rounded-none w-full">
       {/* HEADER TABLEAU */}
       {title && (
         <div className="p-6 border-b border-subtle bg-main/50 theme-transition flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -262,9 +292,8 @@ export default function DataTable({ title, headers, children }) {
         </div>
       )}
 
-      {/* --- BARRE D'OUTILS PRINCIPALE : RECHERCHE + BOUTON FILTRE (TACTILE ET COMPACTE) --- */}
+      {/* --- BARRE D'OUTILS : RECHERCHE + BOUTON FILTRE --- */}
       <div className="bg-main/20 p-3 border-b border-subtle flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-        {/* Barre de recherche tactile avec bouton X pour vider facilement au doigt */}
         <div className="relative flex-1 max-w-sm">
           <Search
             size={14}
@@ -287,7 +316,6 @@ export default function DataTable({ title, headers, children }) {
           )}
         </div>
 
-        {/* Bouton pour déployer les filtres de date/colonne */}
         <Button
           variant={isAnyFilterActive ? "primary" : "outline"}
           onClick={() => setShowFilterBar(!showFilterBar)}
@@ -298,74 +326,39 @@ export default function DataTable({ title, headers, children }) {
         </Button>
       </div>
 
-      {/* --- LE TIROIR DES FILTRES (RÉTACTABLE - DATE + COLONNES) --- */}
+      {/* --- TIROIR DES FILTRES --- */}
       {showFilterBar && (
         <div className="bg-main/50 border-b border-subtle p-4 space-y-4 animate-in slide-in-from-top duration-200">
-          {/* Ligne A : Les filtres de dates (Seulement si le tableau gère des dates) */}
           {dateColIndex !== -1 && (
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-[10px] font-bold uppercase text-t-muted tracking-widest mr-2 flex items-center gap-1">
+                <span className="text-[10px] font-bold uppercase text-t-muted tracking-widest mr-2">
                   Période :
                 </span>
-                <Button
-                  variant={filterType === "all" ? "primary" : "outline"}
-                  onClick={() => {
-                    setFilterType("all");
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                  className="py-1.5 px-3 text-[9px]"
-                >
-                  Tout
-                </Button>
-                <Button
-                  variant={filterType === "today" ? "primary" : "outline"}
-                  onClick={() => {
-                    setFilterType("today");
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                  className="py-1.5 px-3 text-[9px]"
-                >
-                  Aujourd'hui
-                </Button>
-                <Button
-                  variant={filterType === "week" ? "primary" : "outline"}
-                  onClick={() => {
-                    setFilterType("week");
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                  className="py-1.5 px-3 text-[9px]"
-                >
-                  7 Jours
-                </Button>
-                <Button
-                  variant={filterType === "month" ? "primary" : "outline"}
-                  onClick={() => {
-                    setFilterType("month");
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                  className="py-1.5 px-3 text-[9px]"
-                >
-                  30 Jours
-                </Button>
-                <Button
-                  variant={filterType === "year" ? "primary" : "outline"}
-                  onClick={() => {
-                    setFilterType("year");
-                    setStartDate("");
-                    setEndDate("");
-                  }}
-                  className="py-1.5 px-3 text-[9px]"
-                >
-                  Année
-                </Button>
+                {["all", "today", "week", "month", "year"].map((p) => (
+                  <Button
+                    key={p}
+                    variant={filterType === p ? "primary" : "outline"}
+                    onClick={() => {
+                      setFilterType(p);
+                      setStartDate("");
+                      setEndDate("");
+                    }}
+                    className="py-1.5 px-3 text-[9px]"
+                  >
+                    {p === "all"
+                      ? "Tout"
+                      : p === "today"
+                        ? "Aujourd'hui"
+                        : p === "week"
+                          ? "7 Jours"
+                          : p === "month"
+                            ? "30 Jours"
+                            : "Année"}
+                  </Button>
+                ))}
               </div>
 
-              {/* Saisie de l'Intervalle de Dates (Du / Au) */}
               <div className="flex gap-2 items-center flex-wrap">
                 <span className="text-[10px] font-bold uppercase text-t-muted tracking-widest">
                   Intervalle :
@@ -378,7 +371,7 @@ export default function DataTable({ title, headers, children }) {
                       setStartDate(e.target.value);
                       setFilterType("custom");
                     }}
-                    className="bg-transparent border-0 text-t-main text-xs font-bold font-mono focus:outline-none cursor-pointer"
+                    className="bg-transparent border-0 text-t-main text-xs font-bold font-mono focus:outline-none"
                   />
                   <span className="text-[9px] uppercase font-bold text-t-muted">
                     au
@@ -390,7 +383,7 @@ export default function DataTable({ title, headers, children }) {
                       setEndDate(e.target.value);
                       setFilterType("custom");
                     }}
-                    className="bg-transparent border-0 text-t-main text-xs font-bold font-mono focus:outline-none cursor-pointer"
+                    className="bg-transparent border-0 text-t-main text-xs font-bold font-mono focus:outline-none"
                   />
                   {(startDate || endDate) && (
                     <button
@@ -410,13 +403,11 @@ export default function DataTable({ title, headers, children }) {
             </div>
           )}
 
-          {/* Ligne B : Les filtres de colonnes dynamiques (Statuts, Coiffeurs, Catégories...) */}
           {Object.keys(columnUniqueValues).length > 0 && (
             <div className="flex flex-wrap gap-4 pt-3 border-t border-subtle/50 border-dashed items-center">
               <span className="text-[10px] font-bold uppercase text-t-muted tracking-widest">
                 Filtrer par Colonne :
               </span>
-
               {Object.entries(columnUniqueValues).map(
                 ([colIdxStr, uniqueValues]) => {
                   const colIdx = parseInt(colIdxStr, 10);
@@ -448,20 +439,6 @@ export default function DataTable({ title, headers, children }) {
                           </option>
                         ))}
                       </select>
-                      {currentValue !== "all" && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setColumnFilters((prev) => ({
-                              ...prev,
-                              [colIdx]: "all",
-                            }));
-                          }}
-                          className="text-red-500 hover:text-red-400 p-0.5 ml-1"
-                        >
-                          <X size={10} />
-                        </button>
-                      )}
                     </div>
                   );
                 },
@@ -520,9 +497,101 @@ export default function DataTable({ title, headers, children }) {
               })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-subtle/30">{processedRows}</tbody>
+          <tbody className="divide-y divide-subtle/30">{paginatedRows}</tbody>
         </table>
       </div>
+
+      {/* ── FOOTER DE PAGINATION TACTILE ET MODERNE ── */}
+      {enablePagination && (
+        <div className="p-4 border-t border-subtle bg-main/40 flex flex-col sm:flex-row justify-between items-center gap-4 select-none">
+          {/* Lignes par page & Compteur */}
+          <div className="flex items-center gap-4 text-xs text-t-muted font-bold">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider">
+                Lignes par page :
+              </span>
+              <select
+                value={rowsPerPage}
+                onChange={(e) => {
+                  setRowsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-surface border border-subtle text-t-main px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:border-brand rounded-none cursor-pointer"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            <span className="font-mono text-slate-400 text-xs border-l border-subtle pl-4">
+              {totalRows > 0 ? (
+                <>
+                  <span className="text-t-main font-bold">
+                    {startIndex + 1}
+                  </span>{" "}
+                  -{" "}
+                  <span className="text-t-main font-bold">
+                    {Math.min(startIndex + rowsPerPage, totalRows)}
+                  </span>{" "}
+                  sur <span className="text-brand font-bold">{totalRows}</span>{" "}
+                  entrées
+                </>
+              ) : (
+                "0 sur 0"
+              )}
+            </span>
+          </div>
+
+          {/* Boutons de contrôle */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="p-2 border border-subtle bg-surface text-t-muted hover:text-brand hover:border-brand/40 disabled:opacity-30 disabled:pointer-events-none rounded-none transition-colors"
+              title="Première page"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="p-2 border border-subtle bg-surface text-t-muted hover:text-brand hover:border-brand/40 disabled:opacity-30 disabled:pointer-events-none rounded-none transition-colors"
+              title="Page précédente"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span className="px-3.5 py-1.5 text-xs font-mono font-bold text-brand bg-surface border border-subtle shadow-inner">
+              Page {currentPage} / {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+              }
+              disabled={currentPage === totalPages}
+              className="p-2 border border-subtle bg-surface text-t-muted hover:text-brand hover:border-brand/40 disabled:opacity-30 disabled:pointer-events-none rounded-none transition-colors"
+              title="Page suivante"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-2 border border-subtle bg-surface text-t-muted hover:text-brand hover:border-brand/40 disabled:opacity-30 disabled:pointer-events-none rounded-none transition-colors"
+              title="Dernière page"
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

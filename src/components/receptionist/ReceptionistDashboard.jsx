@@ -41,19 +41,28 @@ export default function ReceptionistDashboard() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [ticketToPay, setTicketToPay] = useState(null);
 
+  const [dailyGoal, setDailyGoal] = useState(30000);
+
   // --- 1. DATA FETCHING & POLLING ---
   const loadData = async () => {
     try {
-      const [barbersRes, liveRes, historyRes, statsRes] = await Promise.all([
-        api.get("/barbers"),
-        api.get("/tickets/live"),
-        api.get("/tickets/history"),
-        api.get("/reports/dashboard?period=today"), // NEW: Pull daily analytics
-      ]);
+      const [barbersRes, liveRes, historyRes, statsRes, settingsRes] =
+        await Promise.all([
+          api.get("/barbers"),
+          api.get("/tickets/live"),
+          api.get("/tickets/history"),
+          api.get("/reports/dashboard?period=today"),
+          api.get("/settings"), // <-- AJOUT POUR RÉCUPÉRER L'OBJECTIF
+        ]);
       setBarbers(barbersRes.data);
       setLiveTickets(liveRes.data);
       setHistoryTickets(historyRes.data);
       setDailyStats(statsRes.data);
+
+      // Met à jour l'objectif configuré par le patron
+      if (settingsRes.data.daily_revenue_goal) {
+        setDailyGoal(parseFloat(settingsRes.data.daily_revenue_goal) || 30000);
+      }
     } catch (error) {
       console.error("Erreur de synchronisation:", error);
     } finally {
@@ -77,8 +86,8 @@ export default function ReceptionistDashboard() {
   ).length;
 
   // Daily Goal Logic (Example Goal: DZD1000/day)
-  const DAILY_GOAL = 1000;
-  const goalPercentage = Math.min((totalRevenueToday / DAILY_GOAL) * 100, 100);
+  const goalPercentage =
+    dailyGoal > 0 ? Math.min((totalRevenueToday / dailyGoal) * 100, 100) : 0;
 
   // Top 3 Services today
   const topServices = [...dailyStats.charts.serviceDistributionData]
@@ -183,8 +192,9 @@ export default function ReceptionistDashboard() {
             <h3 className="text-xs uppercase font-bold tracking-widest text-slate-400 flex items-center gap-2">
               <Target size={14} /> Objectif Journalier
             </h3>
-            <span className="text-xs font-mono text-slate-500">
-              DZD {DAILY_GOAL}
+            {/* AFFICHE LE MONTANT RÉEL CONFIGURÉ */}
+            <span className="text-xs font-mono font-bold text-amber-400">
+              DZD {Number(dailyGoal).toLocaleString()}
             </span>
           </div>
           <div className="flex items-end gap-2 mb-2">
@@ -280,9 +290,20 @@ export default function ReceptionistDashboard() {
               </p>
             )}
             {barbers.map((barber) => {
-              const isBusy = !!liveTickets.find(
-                (t) => t.barberId === barber.id && t.status === "in-progress",
+              // On récupère les tickets de ce barbier
+              const barberTickets = liveTickets.filter(
+                (t) => t.barberId === barber.id,
               );
+              const isInProgress = barberTickets.some(
+                (t) => t.status === "in-progress",
+              );
+              const waitingCount = barberTickets.filter(
+                (t) => t.status === "waiting",
+              ).length;
+
+              // MODIFIÉ : Occupé si en cours OU s'il y a de l'attente
+              const isBusy = isInProgress || waitingCount > 0;
+
               return (
                 <div
                   key={barber.id}
@@ -292,27 +313,27 @@ export default function ReceptionistDashboard() {
                       : "bg-slate-950 border-slate-800"
                   }`}
                 >
-                  <div className="relative ">
+                  <div className="relative">
                     <img
                       src={
                         barber.image ||
                         `https://ui-avatars.com/api/?name=${barber.name}&background=D4AF37&color=1E1E1E&rounded=false&size=150&bold=true`
                       }
                       alt={barber.name}
-                      className={`w-20 h-20 object-cover rounded-full  transition-all ${isBusy ? "border-amber-500" : "border-slate-700 grayscale"}`}
+                      className={`w-20 h-20 object-cover rounded-full transition-all ${isBusy ? "border-amber-500" : "border-slate-700 grayscale"}`}
                     />
-                    <div
-                      className={`absolute bottom-1 -right-0 px-2 py-2 rounded-full  border border-slate-900 text-[10px] font-bold uppercase tracking-widest ${
-                        isBusy
-                          ? "bg-orange-500 text-black"
-                          : "bg-green-500 text-black"
-                      }`}
-                    ></div>
                   </div>
                   <div className="flex-1 mt-2">
                     <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
                       {barber.name}
                     </h3>
+                    <p className="text-[10px] text-t-muted uppercase font-bold mt-1">
+                      {waitingCount > 0
+                        ? `${waitingCount} en attente`
+                        : isBusy
+                          ? "En cours"
+                          : "Libre"}
+                    </p>
                   </div>
                 </div>
               );

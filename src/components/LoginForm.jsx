@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Button from "./common/Button"; // Reusing our master button
 import { User, Lock } from "lucide-react";
-import logo from "../assets/images/logo.png";
+import logo from "../assets/images/logo-transparent.png";
 
 export default function LoginForm({ onSubmit, isLoading }) {
   const [username, setUsername] = useState("");
@@ -35,7 +35,7 @@ export default function LoginForm({ onSubmit, isLoading }) {
       <div className="flex flex-col items-center mb-8">
         <img
           src={logo}
-          alt="Sallon Picasso"
+          alt="Salon VSP"
           className="w-20 h-20 object-contain mb-4"
         />
         <h2 className="text-2xl font-serif font-bold text-amber-500 uppercase tracking-widest text-center">
@@ -58,7 +58,7 @@ export default function LoginForm({ onSubmit, isLoading }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 text-slate-100 pl-11 pr-4 py-3 focus:border-amber-500 focus:outline-none transition-colors rounded-none placeholder:text-slate-700 font-bold"
-              placeholder="Ex: receptionist"
+              placeholder="Ex: Utilisateur"
               required
             />
           </div>

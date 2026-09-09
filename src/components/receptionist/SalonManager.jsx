@@ -6,6 +6,7 @@ import {
   Edit,
   Trash2,
   RefreshCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -16,7 +17,7 @@ import Input from "../common/Input";
 import ImageUpload from "../common/ImageUpload";
 
 export default function SalonManager() {
-  const [activeTab, setActiveTab] = useState("services"); // 'services' or 'products'
+  const [activeTab, setActiveTab] = useState("services"); // 'services' ou 'products'
 
   const [services, setServices] = useState([]);
   const [products, setProducts] = useState([]);
@@ -54,13 +55,32 @@ export default function SalonManager() {
     setModalMode(mode);
     if (mode === "edit" && item) {
       setCurrentItem(item);
-      setFormData(item);
+      setFormData({
+        ...item,
+        hasProductDeduction: item.hasProductDeduction || false,
+        productCost: item.productCost ? item.productCost.toString() : "",
+      });
     } else {
       setCurrentItem(null);
       setFormData(
         type === "service"
-          ? { name: "", price: "", duration: "", image: "" }
-          : { name: "", salePrice: "", costPerUse: "", image: "" },
+          ? {
+              name: "",
+              price: "",
+              duration: "",
+              image: "",
+              hasProductDeduction: false,
+              productCost: "",
+            }
+          : {
+              name: "",
+              salePrice: "",
+              purchasePrice: "",
+              stock: "0",
+              minStock: "3",
+              costPerUse: "",
+              image: "",
+            },
       );
     }
     setIsModalOpen(true);
@@ -84,15 +104,15 @@ export default function SalonManager() {
     try {
       if (modalMode === "add") {
         await api.post(endpoint, formData);
-        toast.success(`${formData.name} ajouté avec succès!`);
+        toast.success(`${formData.name} ajouté avec succès !`);
       } else {
         await api.put(`${endpoint}/${currentItem.id}`, formData);
-        toast.success(`${formData.name} mis à jour!`);
+        toast.success(`${formData.name} mis à jour !`);
       }
       handleCloseModal();
       fetchData();
     } catch (error) {
-      toast.error("Erreur de sauvegarde");
+      toast.error(error.response?.data?.message || "Erreur de sauvegarde");
     } finally {
       setIsSubmitting(false);
     }
@@ -111,11 +131,10 @@ export default function SalonManager() {
     }
   };
 
-  // --- COMPOSANT CARTE REVISITÉ (Plus clair, plus coloré) ---
+  // --- CARTE D'AFFICHAGE (ITEM CARD) ---
   const ItemCard = ({ item, isService }) => (
     <div className="bg-surface border border-subtle shadow-md hover:shadow-lg transition-all flex flex-col justify-between group">
       <div>
-        {/* Image en couleur, avec un marqueur visuel clair en haut */}
         <div
           className={`h-1.5 w-full ${isService ? "bg-blue-500" : "bg-purple-500"}`}
         />
@@ -128,33 +147,66 @@ export default function SalonManager() {
             alt={item.name}
             className="h-full w-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
           />
-          {/* Badge de catégorie directement sur l'image */}
           <span
-            className={`absolute top-2 right-2 px-2 py-1 text-xs font-bold text-white shadow-sm ${isService ? "bg-blue-600" : "bg-purple-600"}`}
+            className={`absolute top-2 right-2 px-2 py-1 text-xs font-bold text-white shadow-sm ${
+              isService ? "bg-blue-600" : "bg-purple-600"
+            }`}
           >
             {isService ? "SERVICE" : "PRODUIT"}
           </span>
+
+          {/* Badge Prestation Technique si activé */}
+          {isService && item.hasProductDeduction && (
+            <span className="absolute top-2 left-2 bg-amber-500 text-slate-950 font-bold text-[9px] uppercase px-2 py-1 shadow-sm flex items-center gap-1">
+              <Sparkles size={10} /> Technique (Dose: {item.productCost} DA)
+            </span>
+          )}
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-3">
           <h3 className="font-bold text-t-main text-lg leading-tight line-clamp-2">
             {item.name}
           </h3>
 
           {isService ? (
-            <div className="flex justify-between items-center bg-main p-2 border border-subtle">
-              <div className="flex flex-col">
-                <span className="text-xs text-t-muted font-bold">Durée</span>
-                <span className="text-sm font-bold text-t-main">
-                  {item.duration} Min
-                </span>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center bg-main p-2 border border-subtle">
+                <div className="flex flex-col">
+                  <span className="text-xs text-t-muted font-bold">Durée</span>
+                  <span className="text-sm font-bold text-t-main">
+                    {item.duration} Min
+                  </span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-xs text-t-muted font-bold">
+                    Tarif Client
+                  </span>
+                  <span className="text-lg font-mono font-bold text-green-500">
+                    {Number(item.price).toFixed(2)} DA
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col items-end">
-                <span className="text-xs text-t-muted font-bold">Tarif</span>
-                <span className="text-lg font-mono font-bold text-green-500">
-                  {Number(item.price).toFixed(2)} DA
-                </span>
-              </div>
+
+              {/* Aperçu répartition sur la carte */}
+              {item.hasProductDeduction ? (
+                <div className="text-[10px] text-t-muted italic bg-amber-500/5 p-2 border border-amber-500/20">
+                  Part Barbier :{" "}
+                  {(Math.max(0, item.price - item.productCost) * 0.5).toFixed(
+                    0,
+                  )}{" "}
+                  DA | Salon :{" "}
+                  {(
+                    item.productCost +
+                    (item.price - item.productCost) * 0.5
+                  ).toFixed(0)}{" "}
+                  DA
+                </div>
+              ) : (
+                <div className="text-[10px] text-t-muted italic bg-main p-1.5 border border-subtle">
+                  Répartition standard 50/50 (Barbier:{" "}
+                  {(item.price * 0.5).toFixed(0)} DA)
+                </div>
+              )}
             </div>
           ) : (
             <div className="bg-main p-2 border border-subtle space-y-2">
@@ -166,24 +218,11 @@ export default function SalonManager() {
                   {Number(item.salePrice).toFixed(2)} DA
                 </span>
               </div>
-              <div className="flex justify-between items-center border-t border-subtle/50 pt-2">
-                <span className="text-xs font-bold text-t-muted">
-                  Coût d'utilisation
-                </span>
-                <span className="text-sm font-mono font-bold text-red-400">
-                  -{" "}
-                  {item.costPerUse
-                    ? Number(item.costPerUse).toFixed(2)
-                    : "0.00"}{" "}
-                  DA
-                </span>
-              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Boutons d'action bien visibles */}
       <div className="flex border-t border-subtle bg-surface p-2 gap-2">
         <Button
           variant="secondary"
@@ -210,7 +249,6 @@ export default function SalonManager() {
 
   return (
     <div className="space-y-6">
-      {/* --- TAB NAVIGATION (Boutons solides et colorés) --- */}
       <div className="flex gap-2 p-1 bg-surface border border-subtle w-fit">
         <button
           onClick={() => setActiveTab("services")}
@@ -234,7 +272,6 @@ export default function SalonManager() {
         </button>
       </div>
 
-      {/* --- HEADER ACTIONS --- */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 p-6 bg-surface border border-subtle shadow-sm">
         <div>
           <h2 className="text-2xl font-bold text-t-main">
@@ -243,9 +280,7 @@ export default function SalonManager() {
               : "Inventaire des Produits"}
           </h2>
           <p className="text-t-muted text-sm mt-1">
-            {activeTab === "services"
-              ? "Gérez les coupes, soins et barbes proposés aux clients."
-              : "Gérez les produits de revente et les consommables du salon."}
+            Gérez les tarifs, durées et les règles de calcul des commissions.
           </p>
         </div>
         <Button
@@ -263,7 +298,6 @@ export default function SalonManager() {
         </Button>
       </div>
 
-      {/* --- GRID RENDER --- */}
       {isLoading ? (
         <div className="py-20 flex flex-col items-center justify-center text-brand space-y-4">
           <RefreshCcw className="w-10 h-10 animate-spin" />
@@ -273,31 +307,20 @@ export default function SalonManager() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {activeTab === "services" && services.length === 0 && (
-            <div className="col-span-full py-12 text-center text-t-muted border border-subtle border-dashed bg-surface font-bold text-lg">
-              Aucune prestation configurée
-            </div>
-          )}
           {activeTab === "services" &&
-            services.map((service) => (
-              <ItemCard key={service.id} item={service} isService={true} />
+            services.map((s) => (
+              <ItemCard key={s.id} item={s} isService={true} />
             ))}
-
-          {activeTab === "products" && products.length === 0 && (
-            <div className="col-span-full py-12 text-center text-t-muted border border-subtle border-dashed bg-surface font-bold text-lg">
-              Aucun produit configuré
-            </div>
-          )}
           {activeTab === "products" &&
-            products.map((product) => (
-              <ItemCard key={product.id} item={product} isService={false} />
+            products.map((p) => (
+              <ItemCard key={p.id} item={p} isService={false} />
             ))}
         </div>
       )}
 
-      {/* --- UNIFIED MODAL --- */}
+      {/* --- MODAL AJOUT / ÉDITION --- */}
       <Modal isOpen={isModalOpen} onClose={handleCloseModal}>
-        <div className="p-8">
+        <div className="p-8 max-h-[90vh] overflow-y-auto">
           <h3 className="text-2xl font-bold text-t-main mb-6 border-b border-subtle pb-4">
             {modalMode === "add" ? "Ajouter" : "Modifier"}{" "}
             {modalType === "service" ? "une Prestation" : "un Produit"}
@@ -317,15 +340,16 @@ export default function SalonManager() {
                   name="name"
                   value={formData.name || ""}
                   onChange={handleFormChange}
-                  placeholder="Ex: Coupe Classique"
+                  placeholder="Ex: Soin Protéine"
                 />
                 <div className="grid grid-cols-2 gap-4">
                   <Input
-                    label="Tarif (DZD) *"
+                    label="Tarif Facturé au Client (DZD) *"
                     name="price"
                     type="number"
                     value={formData.price || ""}
                     onChange={handleFormChange}
+                    placeholder="Ex: 5000"
                   />
                   <Input
                     label="Durée estimée (Minutes)"
@@ -333,7 +357,97 @@ export default function SalonManager() {
                     type="number"
                     value={formData.duration || ""}
                     onChange={handleFormChange}
+                    placeholder="Ex: 45"
                   />
+                </div>
+
+                {/* ── OPTIONS PRESTATION TECHNIQUE (PROTÉINE, KÉRATINE...) ── */}
+                <div className="bg-main border border-subtle p-4 space-y-4 shadow-inner">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.hasProductDeduction)}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          hasProductDeduction: e.target.checked,
+                          productCost: e.target.checked ? prev.productCost : "",
+                        }))
+                      }
+                      className="w-5 h-5 accent-brand"
+                    />
+                    <div>
+                      <span className="text-xs font-bold uppercase text-t-main">
+                        Prestation Technique avec Consommation Produit
+                      </span>
+                      <p className="text-[10px] text-t-muted">
+                        Déduit le coût de la dose (ex: 500 DA) avant le partage
+                        50/50 de la main d'œuvre.
+                      </p>
+                    </div>
+                  </label>
+
+                  {formData.hasProductDeduction && (
+                    <div className="pt-3 border-t border-subtle space-y-3">
+                      <Input
+                        label="Coût de la dose / portion consommée (DZD) *"
+                        name="productCost"
+                        type="number"
+                        step="0.01"
+                        value={formData.productCost || ""}
+                        onChange={handleFormChange}
+                        placeholder="Ex: 500"
+                      />
+
+                      {/* SIMULATEUR EN DIRECT */}
+                      {Number(formData.price) > 0 && (
+                        <div className="bg-surface p-3 border border-brand/30 text-xs font-mono space-y-1">
+                          <p className="text-[10px] uppercase font-bold text-brand">
+                            Simulation de répartition :
+                          </p>
+                          <div className="flex justify-between text-t-muted">
+                            <span>Main d'œuvre nette à partager :</span>
+                            <span className="font-bold text-t-main">
+                              {Math.max(
+                                0,
+                                Number(formData.price) -
+                                  Number(formData.productCost || 0),
+                              )}{" "}
+                              DZD
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-green-500">
+                            <span>Part Barbier (50% MO) :</span>
+                            <span className="font-bold">
+                              {(
+                                Math.max(
+                                  0,
+                                  Number(formData.price) -
+                                    Number(formData.productCost || 0),
+                                ) * 0.5
+                              ).toFixed(2)}{" "}
+                              DZD
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-brand">
+                            <span>Part Salon (Dose + 50% MO) :</span>
+                            <span className="font-bold">
+                              {(
+                                Number(formData.productCost || 0) +
+                                Math.max(
+                                  0,
+                                  Number(formData.price) -
+                                    Number(formData.productCost || 0),
+                                ) *
+                                  0.5
+                              ).toFixed(2)}{" "}
+                              DZD
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -347,17 +461,40 @@ export default function SalonManager() {
                 />
                 <div className="grid grid-cols-2 gap-4">
                   <Input
-                    label="Prix de Vente (DZD) *"
-                    name="salePrice"
+                    label="Prix d'Achat Grossiste (DZD) *"
+                    name="purchasePrice"
                     type="number"
-                    value={formData.salePrice || ""}
+                    step="0.01"
+                    value={formData.purchasePrice || ""}
                     onChange={handleFormChange}
+                    required
                   />
                   <Input
-                    label="Coût par utilisation (DZD)"
-                    name="costPerUse"
+                    label="Prix de Vente Client (DZD) *"
+                    name="salePrice"
                     type="number"
-                    value={formData.costPerUse || ""}
+                    step="0.01"
+                    value={formData.salePrice || ""}
+                    onChange={handleFormChange}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Stock Initial en Rayon *"
+                    name="stock"
+                    type="number"
+                    value={formData.stock !== undefined ? formData.stock : "0"}
+                    onChange={handleFormChange}
+                    required
+                  />
+                  <Input
+                    label="Seuil d'Alerte (Stock Faible)"
+                    name="minStock"
+                    type="number"
+                    value={
+                      formData.minStock !== undefined ? formData.minStock : "3"
+                    }
                     onChange={handleFormChange}
                   />
                 </div>

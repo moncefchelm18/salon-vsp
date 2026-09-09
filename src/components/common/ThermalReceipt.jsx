@@ -1,108 +1,304 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import api from "../../utils/api";
 
 export default function ThermalReceipt({
   type = "receipt",
   data,
   printTrigger,
 }) {
+  const [settings, setSettings] = useState(() => {
+    const cached = localStorage.getItem("vsp_receipt_settings");
+    return cached ? JSON.parse(cached) : {};
+  });
+
+  useEffect(() => {
+    api
+      .get("/settings")
+      .then((res) => {
+        setSettings(res.data);
+        localStorage.setItem("vsp_receipt_settings", JSON.stringify(res.data));
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (printTrigger > 0 && data) {
-      console.log("🖨️ [1/2] PRÉPARATION TICKET :", {
-        type,
-        data,
-        printTrigger,
-      });
       const timer = setTimeout(() => {
-        console.log("🖨️ [2/2] LANCEMENT DE WINDOW.PRINT()");
         window.print();
-      }, 300);
+      }, 350);
       return () => clearTimeout(timer);
     }
-  }, [printTrigger, data]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printTrigger]);
 
   if (!data) return null;
 
-  // ✅ THE FIX: createPortal renders directly into <body>,
-  // bypassing ALL parent wrappers (AuthProvider, BrowserRouter, etc.)
-  // This guarantees the print CSS can target it cleanly.
+  const headerTitle =
+    settings.receipt_header_title !== undefined
+      ? settings.receipt_header_title
+      : settings.receipt_logo
+        ? ""
+        : "Salon VSP";
+
+  const headerSubtitle = settings.receipt_header_subtitle || "";
+  const phone = settings.receipt_phone || "";
+  const address = settings.receipt_address || "";
+  const footerMessage = settings.receipt_footer || "Merci pour votre visite !";
+  const queueSubtitle =
+    settings.receipt_queue_message ||
+    "Veuillez patienter, votre tour approche.";
+  const logo = settings.receipt_logo;
+
   return createPortal(
     <div id="thermal-receipt-root" className="print-only">
-      {/* EN-TÊTE DU TICKET (Commun) */}
-      <div className="receipt-header">
-        <h1>Sallon Picasso</h1>
-        <p>Coiffure &amp; Cafétéria Premium</p>
-        <p>Tél : 0550 00 00 00</p>
-      </div>
-
-      {/* TICKET D'ATTENTE */}
-      {type === "queue" && (
-        <div className="receipt-section">
-          <p className="receipt-label">Votre Numéro</p>
-          {data.queueNumber !== undefined && data.queueNumber !== null ? (
-            <p className="receipt-number">{data.queueNumber}</p>
-          ) : (
-            <p className="receipt-error">ERREUR: N° INCONNU</p>
+      {/* ── EN-TÊTE COMMUN (UNIQUEMENT POUR LES FACTURES ET COMMANDES, PAS POUR L'ATTENTE) ── */}
+      {type !== "queue" && (
+        <div
+          className="receipt-header"
+          style={{ textAlign: "center", marginBottom: "3mm" }}
+        >
+          {logo && (
+            <div style={{ marginBottom: "2mm" }}>
+              <img
+                src={logo}
+                alt="Logo Salon"
+                style={{
+                  maxHeight: "22mm",
+                  maxWidth: "55mm",
+                  objectFit: "contain",
+                  filter: "grayscale(100%) contrast(160%)",
+                  margin: "0 auto",
+                  display: "block",
+                }}
+              />
+            </div>
           )}
-          <p className="receipt-subtitle">Veuillez patienter</p>
-          <div className="receipt-meta">
-            <p>Client : {data.clientName || "--"}</p>
-            <p>Avec : {data.barber || "--"}</p>
-            <p>
-              Le : {new Date().toLocaleDateString("fr-FR")} à{" "}
-              {new Date().toLocaleTimeString("fr-FR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+
+          {headerTitle && headerTitle.trim() !== "" && (
+            <h1
+              style={{
+                fontSize: "16pt",
+                fontWeight: "900",
+                margin: "1mm 0",
+                textTransform: "uppercase",
+              }}
+            >
+              {headerTitle}
+            </h1>
+          )}
+
+          {headerSubtitle && headerSubtitle.trim() !== "" && (
+            <p
+              style={{ fontSize: "9pt", margin: "0.5mm 0", fontWeight: "bold" }}
+            >
+              {headerSubtitle}
             </p>
-          </div>
+          )}
+          {phone && (
+            <p style={{ fontSize: "8pt", margin: "0.5mm 0" }}>Tél : {phone}</p>
+          )}
+          {address && (
+            <p
+              style={{
+                fontSize: "8pt",
+                margin: "0.5mm 0",
+                fontStyle: "italic",
+              }}
+            >
+              {address}
+            </p>
+          )}
         </div>
       )}
 
-      {/* BON DE COMMANDE OU REÇU DE CAISSE */}
-      {(type === "receipt" || type === "order") && (
-        <>
-          <div className="receipt-type-label">
-            {type === "order" && "*** BON DE PRÉPARATION ***"}
-            {type === "receipt" && "*** REÇU DE PAIEMENT ***"}
+      {/* ── TICKET D'ATTENTE CLIENT (ÉPURÉ, SANS LOGO, COIFFEUR & CLIENT CÔTE-À-CÔTE) ── */}
+      {type === "queue" && (
+        <div style={{ textAlign: "center", padding: "1mm 0" }}>
+          {/* Nom du Salon */}
+          <p
+            style={{
+              fontSize: "11pt",
+              textTransform: "uppercase",
+              fontWeight: "900",
+              margin: "0 0 2mm 0",
+              letterSpacing: "0.1em",
+            }}
+          >
+            {headerTitle || "SALON VSP"}
+          </p>
+
+          <div
+            style={{ borderBottom: "1px dashed #000", margin: "2mm 0" }}
+          ></div>
+
+          <p
+            style={{
+              fontSize: "8pt",
+              textTransform: "uppercase",
+              fontWeight: "bold",
+              margin: "1mm 0",
+            }}
+          >
+            VOTRE NUMÉRO DE PASSAGE
+          </p>
+
+          {/* GROS NUMÉRO */}
+          <p
+            style={{
+              fontSize: "44pt",
+              fontWeight: "900",
+              margin: "1mm 0",
+              lineHeight: 1,
+            }}
+          >
+            #{data.queueNumber || data.id}
+          </p>
+
+          {/* POSTE */}
+          {data.poste && data.poste !== "--" && (
+            <div
+              style={{
+                border: "2px solid #000",
+                padding: "1.5mm 4mm",
+                margin: "2mm auto",
+                width: "fit-content",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: "12pt",
+                  fontWeight: "900",
+                  margin: 0,
+                  textTransform: "uppercase",
+                }}
+              >
+                POSTE {data.poste}
+              </p>
+            </div>
+          )}
+
+          {/* COIFFEUR & CLIENT CÔTE À CÔTE + HEURE */}
+          <div
+            style={{
+              borderTop: "1px dashed #000",
+              borderBottom: "1px dashed #000",
+              margin: "3mm 0",
+              padding: "2mm 0",
+              fontSize: "8pt",
+              textAlign: "left",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: "1mm",
+              }}
+            >
+              <span>Coiffeur :</span>
+              <span style={{ fontWeight: "bold", textTransform: "uppercase" }}>
+                {data.barber || "--"}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Heure :</span>
+              <span>
+                {new Date().toLocaleTimeString("fr-FR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
           </div>
 
-          <div className="receipt-meta">
+          <p
+            style={{
+              fontSize: "8pt",
+              fontStyle: "italic",
+              marginTop: "2mm",
+              marginBottom: "1mm",
+            }}
+          >
+            {queueSubtitle}
+          </p>
+        </div>
+      )}
+
+      {/* ── REÇU DE PAIEMENT OU COMMANDE TABLE (FACTURATION) ── */}
+      {(type === "receipt" || type === "order") && (
+        <>
+          <div
+            className="receipt-type-label"
+            style={{
+              textAlign: "center",
+              fontWeight: "bold",
+              fontSize: "10pt",
+              margin: "2mm 0",
+              borderTop: "1px dashed #000",
+              borderBottom: "1px dashed #000",
+              padding: "1mm 0",
+            }}
+          >
+            {type === "order"
+              ? "*** COMMANDE EN COURS ***"
+              : "*** FACTURE D'ENCAISSEMENT ***"}
+          </div>
+
+          <div
+            className="receipt-meta"
+            style={{ fontSize: "8pt", margin: "2mm 0" }}
+          >
             <p>
-              Le : {new Date().toLocaleDateString("fr-FR")} à{" "}
+              Date : {new Date().toLocaleDateString("fr-FR")} à{" "}
               {new Date().toLocaleTimeString("fr-FR", {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
             </p>
-            <p>Facture N°: {data.ticketId || data.id || "---"}</p>
-            {data.clientName && <p>Client: {data.clientName}</p>}
-            {data.barber && <p>Vendeur: {data.barber}</p>}
+            <p>N° Facture : #{data.ticketId || data.id || "---"}</p>
+            {data.clientName && <p>Client : {data.clientName}</p>}
+            {data.barber && <p>Collaborateur : {data.barber}</p>}
           </div>
 
-          <div className="receipt-divider"></div>
+          <div
+            style={{ borderBottom: "1px solid #000", margin: "2mm 0" }}
+          ></div>
 
-          <table className="receipt-table">
+          <table
+            className="receipt-table"
+            style={{
+              width: "100%",
+              fontSize: "8pt",
+              borderCollapse: "collapse",
+            }}
+          >
             <thead>
-              <tr>
-                <th className="col-left">Article</th>
-                <th className="col-right">Prix</th>
+              <tr style={{ borderBottom: "1px dashed #000" }}>
+                <th style={{ textAlign: "left", paddingBottom: "1mm" }}>
+                  Désignation
+                </th>
+                <th style={{ textAlign: "right", paddingBottom: "1mm" }}>
+                  Total
+                </th>
               </tr>
             </thead>
             <tbody>
               {data.service && (
                 <tr>
-                  <td>{data.service}</td>
-                  <td className="col-right">{data.haircutPrice?.toFixed(2)}</td>
+                  <td style={{ padding: "1mm 0" }}>{data.service}</td>
+                  <td style={{ textAlign: "right", fontWeight: "bold" }}>
+                    {Number(data.haircutPrice || 0).toFixed(2)}
+                  </td>
                 </tr>
               )}
               {data.items?.map((item, index) => (
                 <tr key={index}>
-                  <td>
+                  <td style={{ padding: "1mm 0" }}>
                     {item.quantity}x {item.name}
                   </td>
-                  <td className="col-right">
-                    {(item.price * item.quantity).toFixed(2)}
+                  <td style={{ textAlign: "right", fontWeight: "bold" }}>
+                    {(Number(item.price) * Number(item.quantity)).toFixed(2)}
                   </td>
                 </tr>
               ))}
@@ -110,31 +306,79 @@ export default function ThermalReceipt({
           </table>
 
           {type === "receipt" && (
-            <div className="receipt-totals">
-              <div className="total-row total-main">
-                <span>TOTAL:</span>
-                <span>DZD {data.grandTotal?.toFixed(2)}</span>
+            <div
+              className="receipt-totals"
+              style={{
+                borderTop: "1px solid #000",
+                marginTop: "2mm",
+                paddingTop: "2mm",
+                fontSize: "9pt",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12pt",
+                  fontWeight: "900",
+                  margin: "1mm 0",
+                }}
+              >
+                <span>TOTAL NET :</span>
+                <span>DZD {Number(data.grandTotal || 0).toFixed(2)}</span>
               </div>
               {data.discountAmount > 0 && (
-                <div className="total-row">
-                  <span>Remise:</span>
-                  <span>- DZD {data.discountAmount?.toFixed(2)}</span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "8pt",
+                  }}
+                >
+                  <span>Remise accordée :</span>
+                  <span>- DZD {Number(data.discountAmount).toFixed(2)}</span>
                 </div>
               )}
               {data.tipAmount > 0 && (
-                <div className="total-row">
-                  <span>Pourboire:</span>
-                  <span>+ DZD {data.tipAmount?.toFixed(2)}</span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "8pt",
+                  }}
+                >
+                  <span>Pourboire :</span>
+                  <span>+ DZD {Number(data.tipAmount).toFixed(2)}</span>
                 </div>
               )}
-              <div className="total-row">
-                <span>Payé en Espèces:</span>
-                <span>DZD {data.paidAmount?.toFixed(2)}</span>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "8pt",
+                }}
+              >
+                <span>Espèces Perçues :</span>
+                <span>
+                  DZD{" "}
+                  {Number(data.paidAmount || data.grandTotal || 0).toFixed(2)}
+                </span>
               </div>
               {data.unpaidDebt > 0 && (
-                <div className="total-row total-debt">
-                  <span>Reste à payer (Ardoise):</span>
-                  <span>DZD {data.unpaidDebt?.toFixed(2)}</span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: "9pt",
+                    fontWeight: "bold",
+                    color: "#000",
+                    borderTop: "1px dashed #000",
+                    paddingTop: "1mm",
+                    marginTop: "1mm",
+                  }}
+                >
+                  <span>Reste sur Ardoise :</span>
+                  <span>DZD {Number(data.unpaidDebt).toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -142,87 +386,94 @@ export default function ThermalReceipt({
         </>
       )}
 
-      {/* PIED DE TICKET */}
-      <div className="receipt-footer">
-        {type === "order" ? (
-          <p className="receipt-unpaid">NON PAYÉ</p>
-        ) : (
-          <>
-            <p>Merci de votre visite !</p>
-            <p>A très bientôt chez Picasso.</p>
-          </>
-        )}
-      </div>
-
-      {/* ==================================================== */}
-      {/* TICKET DE CLÔTURE (Z-REPORT) */}
-      {/* ==================================================== */}
+      {/* ── Z-REPORT (CLÔTURE CAISSE) ── */}
       {type === "z-report" && (
-        <>
-          <div className="receipt-type-label">
-            *** TICKET DE CLÔTURE (Z-REPORT) ***
+        <div style={{ fontSize: "8pt" }}>
+          <div
+            style={{
+              textAlign: "center",
+              fontWeight: "bold",
+              fontSize: "10pt",
+              margin: "2mm 0",
+              borderTop: "1px dashed #000",
+              borderBottom: "1px dashed #000",
+              padding: "1mm 0",
+            }}
+          >
+            *** CLÔTURE DE CAISSE (Z-REPORT) ***
           </div>
-
-          <div className="receipt-meta">
-            <p>Date : {new Date(data.closedAt).toLocaleDateString("fr-FR")}</p>
-            <p>
-              Heure :{" "}
-              {new Date(data.closedAt).toLocaleTimeString("fr-FR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-            <p>Opérateur : {data.closedBy}</p>
+          <p>Date : {new Date(data.closedAt).toLocaleString("fr-FR")}</p>
+          <p>Opérateur : {data.closedBy}</p>
+          <div style={{ borderTop: "1px solid #000", margin: "2mm 0" }}></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Fond de départ :</span>
+            <span>DZD {Number(data.startingCash || 0).toFixed(2)}</span>
           </div>
-
-          <div className="receipt-divider"></div>
-
-          <div className="receipt-totals">
-            <div className="total-row">
-              <span>Fond de caisse initial:</span>
-              <span>DZD {data.startingCash?.toFixed(2)}</span>
-            </div>
-
-            <div className="total-row">
-              <span>Total Entrées (Ventes +):</span>
-              <span>DZD {data.totalIn?.toFixed(2)}</span>
-            </div>
-
-            <div className="total-row">
-              <span>Total Sorties (Dépenses -):</span>
-              <span>DZD {data.totalOut?.toFixed(2)}</span>
-            </div>
-
-            <div className="receipt-divider"></div>
-
-            <div className="total-row">
-              <span>Solde Théorique:</span>
-              <span>DZD {data.expectedCash?.toFixed(2)}</span>
-            </div>
-
-            <div className="total-row total-main">
-              <span>Compté en Tiroir:</span>
-              <span>DZD {data.reportedCash?.toFixed(2)}</span>
-            </div>
-
-            <div className="receipt-divider"></div>
-
-            <div className="total-row total-debt">
-              <span>Écart de Caisse:</span>
-              <span>
-                {data.difference === 0
-                  ? "PARFAIT (0.00)"
-                  : data.difference > 0
-                    ? `EXCÉDENT (+${data.difference.toFixed(2)})`
-                    : `DÉFICIT (${data.difference.toFixed(2)})`}
-              </span>
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Entrées :</span>
+            <span>+ DZD {Number(data.totalIn || 0).toFixed(2)}</span>
           </div>
-        </>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Sorties :</span>
+            <span>- DZD {Number(data.totalOut || 0).toFixed(2)}</span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontWeight: "bold",
+              fontSize: "10pt",
+              borderTop: "1px solid #000",
+              margin: "2mm 0",
+              paddingTop: "1mm",
+            }}
+          >
+            <span>Compté en Tiroir :</span>
+            <span>DZD {Number(data.reportedCash || 0).toFixed(2)}</span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontWeight: "bold",
+            }}
+          >
+            <span>Écart :</span>
+            <span>
+              {Number(data.difference || 0) === 0
+                ? "0.00 (PARFAIT)"
+                : `DZD ${Number(data.difference).toFixed(2)}`}
+            </span>
+          </div>
+        </div>
       )}
 
-      <div className="receipt-cut-space"></div>
+      {/* ── PIED DE PAGE (UNIQUEMENT POUR LES FACTURES ET COMMANDES) ── */}
+      {type !== "queue" && (
+        <div
+          className="receipt-footer"
+          style={{
+            textAlign: "center",
+            borderTop: "1px dashed #000",
+            marginTop: "4mm",
+            paddingTop: "2mm",
+            fontSize: "8pt",
+          }}
+        >
+          {type === "order" ? (
+            <p style={{ fontWeight: "bold", fontSize: "10pt" }}>
+              COMMANDE EN CUISINE / COMPTOIR
+            </p>
+          ) : (
+            <p style={{ whiteSpace: "pre-line", fontWeight: "bold" }}>
+              {footerMessage}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="receipt-cut-space" style={{ height: "15mm" }}></div>
     </div>,
-    document.body, // ← renders straight into <body>, no parent interference
+    document.body,
   );
 }

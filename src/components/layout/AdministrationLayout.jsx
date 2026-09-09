@@ -23,7 +23,7 @@ import {
   BookOpenCheck,
   TrendingDown,
 } from "lucide-react";
-import logo from "../../assets/images/logo.png";
+import logo from "../../assets/images/logo-transparent.png";
 
 export default function AdministrationLayout({ department = "coiffure" }) {
   const location = useLocation();
@@ -90,6 +90,13 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       icon: LayoutGrid,
       path: "/administration/coiffure/postes",
       roles: ["admin"],
+    },
+    {
+      id: "stock",
+      label: "Gestion Stock",
+      icon: PackageSearch,
+      path: "/administration/coiffure/stock",
+      roles: ["admin", "receptionist"], // Accessible par les deux !
     },
     {
       id: "coiffeurs",
@@ -245,7 +252,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
           <div>
             <h2 className="text-xl font-bold uppercase tracking-widest text-brand transition-colors duration-100">
               {filteredNavItems.find((n) => location.pathname === n.path)
-                ?.label || "Picasso Admin"}
+                ?.label || "VSP Admin"}
             </h2>
             <p className="text-[10px] text-t-muted uppercase tracking-widest font-bold mt-1">
               {role === "admin" ? "Administrateur" : "Receptionniste"} -{" "}

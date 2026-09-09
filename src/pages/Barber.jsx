@@ -9,7 +9,7 @@ import Button from "../components/common/Button";
 import Modal from "../components/common/Modal";
 import Input from "../components/common/Input";
 import BarberQueue from "../components/barber/BarberQueue";
-import logo from "../assets/images/logo.png"; // Adjust path if needed
+import logo from "../assets/images/logo-transparent.png"; // Adjust path if needed
 
 export default function BarberTabletView() {
   const { logout } = useAuth();
@@ -124,12 +124,12 @@ export default function BarberTabletView() {
       <div className="w-full max-w-4xl relative z-10">
         <div className="flex justify-between items-end mb-10 border-b border-slate-800 pb-4">
           <div>
-            <img src={logo} alt="Sallon Picasso" className="h-16 mb-4" />
+            <img src={logo} alt="Salon VSP" className="h-16 mb-4" />
             <h1 className="text-3xl font-serif font-bold text-slate-100 uppercase tracking-widest">
               Select Staff
             </h1>
             <p className="text-slate-500 uppercase tracking-widest text-xs font-bold mt-1">
-              Sallon Picasso Station
+              Salon VSP Station
             </p>
           </div>
           <button

@@ -1,10 +1,11 @@
-# Sallon Picasso - Luxury Barbershop Management System
+# Salon VSP - Luxury Barbershop Management System
 
 A modern, full-featured barbershop management application built with Vite React. Manage clients, barbers, services, payments, and generate detailed financial reports.
 
 ## Features
 
 ### Receptionist Dashboard
+
 - **Dashboard Overview**: View key metrics (total barbers, pending tickets, completed services)
 - **Ticket Management**: Create and manage service tickets for clients
 - **Client Management**: Add, view, and manage client information
@@ -12,6 +13,7 @@ A modern, full-featured barbershop management application built with Vite React.
 - **Financial Reports**: View detailed charts and reports on revenue and service distribution
 
 ### Barber Interface
+
 - **Barber Login**: Secure PIN-based authentication for each barber
 - **Queue Management**: View pending tickets and current service status
 - **Service Selection**: Choose services and add optional products
@@ -21,54 +23,55 @@ A modern, full-featured barbershop management application built with Vite React.
 
 \`\`\`
 src/
-├── main.jsx                 # Entry point
-├── App.jsx                  # Main router configuration
-├── index.css               # Global styles
+├── main.jsx # Entry point
+├── App.jsx # Main router configuration
+├── index.css # Global styles
 ├── pages/
-│   ├── Login.jsx           # Login page
-│   ├── Receptionist.jsx    # Receptionist page
-│   └── Barber.jsx          # Barber page
+│ ├── Login.jsx # Login page
+│ ├── Receptionist.jsx # Receptionist page
+│ └── Barber.jsx # Barber page
 ├── components/
-│   ├── LoginForm.jsx       # Login form component
-│   ├── receptionist/
-│   │   ├── ReceptionistLayout.jsx
-│   │   ├── ReceptionistDashboard.jsx
-│   │   ├── ClientsManager.jsx
-│   │   ├── PaymentsManager.jsx
-│   │   └── ReportsView.jsx
-│   └── barber/
-│       ├── BarberLayout.jsx
-│       ├── BarberLogin.jsx
-│       └── BarberQueue.jsx
+│ ├── LoginForm.jsx # Login form component
+│ ├── receptionist/
+│ │ ├── ReceptionistLayout.jsx
+│ │ ├── ReceptionistDashboard.jsx
+│ │ ├── ClientsManager.jsx
+│ │ ├── PaymentsManager.jsx
+│ │ └── ReportsView.jsx
+│ └── barber/
+│ ├── BarberLayout.jsx
+│ ├── BarberLogin.jsx
+│ └── BarberQueue.jsx
 ├── context/
-│   └── AuthContext.jsx     # Authentication context
+│ └── AuthContext.jsx # Authentication context
 └── lib/
-    └── mockData.js         # Mock data for demo
+└── mockData.js # Mock data for demo
 \`\`\`
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js 16+ 
+
+- Node.js 16+
 - npm or yarn
 
 ### Installation
 
 1. Clone the repository
-\`\`\`bash
-git clone <repository-url>
-cd sallon-picasso
-\`\`\`
+   \`\`\`bash
+   git clone <repository-url>
+   cd salon-vsp
+   \`\`\`
 
 2. Install dependencies
-\`\`\`bash
-npm install
-\`\`\`
+   \`\`\`bash
+   npm install
+   \`\`\`
 
 3. Start the development server
-\`\`\`bash
-npm run dev
-\`\`\`
+   \`\`\`bash
+   npm run dev
+   \`\`\`
 
 The app will open at `http://localhost:3000`
 
@@ -82,14 +85,17 @@ npm run preview
 ## Demo Credentials
 
 ### Receptionist Login
+
 - **Email**: receptionist@gmail.com
 - **PIN**: 0000
 
 ### Barber Login
+
 - **Email**: barbers@gmail.com
 - **PIN**: 0000
 
 #### Barber PINs
+
 - **Marco**: 1234
 - **Antonio**: 5678
 - **Giuseppe**: 9012
@@ -107,7 +113,9 @@ npm run preview
 ## Features Overview
 
 ### Mock Data
+
 All data is stored in component state using mock data. The app demonstrates:
+
 - Client management with CRUD operations
 - Ticket creation and status tracking
 - Payment recording and revenue calculation
@@ -115,6 +123,7 @@ All data is stored in component state using mock data. The app demonstrates:
 - Real-time queue management
 
 ### Design
+
 - Premium dark theme with warm gold accents
 - Responsive layout for desktop and tablet
 - Smooth transitions and hover effects

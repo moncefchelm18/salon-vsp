@@ -164,7 +164,6 @@ export default function SalonPOS() {
     try {
       // S'il y a des articles du Salon OU s'il y a un Pourboire
       if (salonItems.length > 0 || tipAmount > 0) {
-        // Si le panier est vide mais qu'il y a un pourboire, le nom du service sera juste "Pourboire"
         const serviceNameString =
           salonItems.length > 0
             ? salonItems.map((i) => `${i.quantity}x ${i.name}`).join(" + ")
@@ -176,6 +175,11 @@ export default function SalonPOS() {
         );
         const finalSalonPrice = Math.max(0, salonSubTotal - discountAmount);
 
+        // On filtre uniquement les produits physiques du salon pour le déstockage
+        const salonProductsToDeduct = cart.filter(
+          (i) => i.type === "salon_product",
+        );
+
         await api.post("/tickets/manual-pay", {
           clientName: "Client Comptoir",
           phone: "",
@@ -183,8 +187,13 @@ export default function SalonPOS() {
           serviceName: serviceNameString,
           totalPrice: finalSalonPrice,
           additionalCafeItems: cafeItems,
+          // --- ENVOI DES PRODUITS SALON POUR DÉSTOCKAGE RÉEL ---
+          additionalSalonProducts: salonProductsToDeduct.map((p) => ({
+            id: p.id,
+            quantity: p.quantity,
+          })),
           tip: tipAmount,
-          paidAmount: finalTotal + tipAmount, // L'argent réel (Produits + Pourboire)
+          paidAmount: finalTotal + tipAmount,
         });
       } else {
         // --- ROUTE 2 : Juste un café (Aucun salon, aucun pourboire) ---

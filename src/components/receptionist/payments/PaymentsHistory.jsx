@@ -1,10 +1,9 @@
-import React from "react";
-import { Search, Receipt, Ban, Eye, Gift } from "lucide-react";
+import React, { useMemo } from "react";
+import { Search, Receipt, Ban, Eye, Gift, Coins, Tag } from "lucide-react";
 import DataTable from "../../common/DataTable";
 
 export default function PaymentsHistory({
   completedPaymentsHistory,
-  totalRevenueToday,
   searchTerm,
   setSearchTerm,
   filterBarber,
@@ -13,27 +12,88 @@ export default function PaymentsHistory({
   onViewTicket,
   onOpenPostTip,
 }) {
+  // ── CALCULS COMPTABLES DÉTAILLÉS EN TEMPS RÉEL ──
+  const { totalNetServices, totalTips, totalDiscounts, totalPhysicalCash } =
+    useMemo(() => {
+      let net = 0;
+      let tips = 0;
+      let discounts = 0;
+
+      completedPaymentsHistory.forEach((t) => {
+        net += Number(t.price || 0);
+        tips += Number(t.tip || 0);
+        discounts += Number(t.discountAmount || 0);
+      });
+
+      return {
+        totalNetServices: net,
+        totalTips: tips,
+        totalDiscounts: discounts,
+        totalPhysicalCash: net + tips, // L'argent total qui est physiquement entré dans le tiroir
+      };
+    }, [completedPaymentsHistory]);
+
   return (
     <section className="bg-slate-900 border border-slate-800">
       {/* Section Header */}
-      <div className="px-6 py-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
+      <div className="px-6 py-5 border-b border-slate-800 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2 mb-1">
-            <Receipt className="w-3.5 h-3.5" />
+          <h2 className="text-sm font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2 mb-2">
+            <Receipt className="w-4 h-4" />
             Transactions du Jour
           </h2>
-          <div className="flex items-center gap-2 mt-1.5">
-            <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">
-              Total Caisse :
-            </span>
-            <span className="font-mono font-bold text-green-400 text-base border border-green-900/50 bg-green-950/20 px-3 py-0.5">
-              DZD {totalRevenueToday.toFixed(2)}
-            </span>
+
+          {/* ── BANDEAU COMPTABLE ULTRA-DÉTAILLÉ (FINI LES ERREURS) ── */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* 1. TOTAL RÉEL DANS LE TIROIR */}
+            <div className="flex items-center gap-2 bg-green-950/40 border-2 border-green-500/50 px-3.5 py-1.5 shadow-sm">
+              <Coins size={14} className="text-green-400" />
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-300">
+                Total Encaissé (Tiroir) :
+              </span>
+              <span className="font-mono font-black text-green-400 text-base">
+                DZD {totalPhysicalCash.toFixed(2)}
+              </span>
+            </div>
+
+            {/* 2. DÉTAIL DES PRESTATIONS NETTES */}
+            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-3 py-1.5">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500">
+                Prestations :
+              </span>
+              <span className="font-mono font-bold text-amber-400 text-xs">
+                DZD {totalNetServices.toFixed(2)}
+              </span>
+            </div>
+
+            {/* 3. DÉTAIL DES POURBOIRES */}
+            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-3 py-1.5">
+              <Gift size={12} className="text-emerald-400" />
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500">
+                Pourboires :
+              </span>
+              <span className="font-mono font-bold text-emerald-400 text-xs">
+                + DZD {totalTips.toFixed(2)}
+              </span>
+            </div>
+
+            {/* 4. DÉTAIL DES REMISES (S'affiche s'il y a eu au moins une remise) */}
+            {totalDiscounts > 0 && (
+              <div className="flex items-center gap-1.5 bg-red-950/30 border border-red-500/30 px-3 py-1.5 text-red-400">
+                <Tag size={12} className="text-red-400" />
+                <span className="text-[9px] uppercase font-bold tracking-wider text-red-400/90">
+                  Remises Salon :
+                </span>
+                <span className="font-mono font-bold text-xs">
+                  - DZD {totalDiscounts.toFixed(2)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full md:w-auto">
+        {/* Filtres de recherche */}
+        <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full xl:w-auto">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-600 absolute top-1/2 left-3 -translate-y-1/2 pointer-events-none" />
             <input
@@ -61,12 +121,13 @@ export default function PaymentsHistory({
 
       <DataTable
         headers={[
-          { label: "Réf." },
+          { label: "N° Ticket" },
+          { label: "Heure" },
           { label: "Client" },
           { label: "Coiffeur" },
           { label: "Prestation" },
           { label: "Pourboire", align: "right" },
-          { label: "Montant", align: "right" },
+          { label: "Montant Net", align: "right" },
           { label: "Actions", align: "right" },
         ]}
       >
@@ -76,9 +137,17 @@ export default function PaymentsHistory({
               key={payment.id}
               className="border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors group"
             >
-              <td className="py-4 px-5 text-slate-600 font-mono font-bold text-[10px]">
-                #{payment.id}
+              <td className="py-4 px-5 text-amber-500 font-mono font-bold text-sm uppercase">
+                #{payment.queueNumber || payment.id}
               </td>
+
+              <td className="py-4 px-5 text-slate-400 font-mono text-[10px]">
+                {new Date(payment.createdAt).toLocaleTimeString("fr-FR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </td>
+
               <td className="py-4 px-5 text-slate-200 font-bold text-xs uppercase tracking-wide">
                 {payment.clientName}
               </td>
@@ -97,12 +166,29 @@ export default function PaymentsHistory({
                   <span className="text-slate-700">—</span>
                 )}
               </td>
-              <td className="py-4 px-5 text-right font-mono font-bold text-amber-400 text-sm">
-                DZD {(payment.price || 0).toFixed(2)}
+
+              <td className="py-4 px-5 text-right">
+                {payment.discountAmount > 0 ? (
+                  <div className="flex flex-col items-end leading-tight">
+                    <span className="text-slate-500 line-through text-[9px] font-mono">
+                      DZD {payment.originalPrice?.toFixed(2)}
+                    </span>
+                    <span className="font-mono font-bold text-amber-400 text-sm">
+                      DZD {(payment.price || 0).toFixed(2)}
+                    </span>
+                    <span className="text-red-400 text-[9px] font-bold">
+                      (- DZD {payment.discountAmount.toFixed(2)})
+                    </span>
+                  </div>
+                ) : (
+                  <span className="font-mono font-bold text-amber-400 text-sm">
+                    DZD {(payment.price || 0).toFixed(2)}
+                  </span>
+                )}
               </td>
+
               <td className="py-4 px-5 text-right">
                 <div className="flex items-center justify-end gap-1">
-                  {/* Utilisation de boutons secondaires solides au lieu de ghosts */}
                   <button
                     onClick={() => onViewTicket(payment)}
                     title="Voir les détails"
@@ -123,7 +209,7 @@ export default function PaymentsHistory({
           ))
         ) : (
           <tr>
-            <td colSpan="7" className="py-16 bg-slate-950/30 text-center">
+            <td colSpan="8" className="py-16 bg-slate-950/30 text-center">
               <Ban className="w-7 h-7 text-slate-800 mx-auto mb-3" />
               <p className="font-bold uppercase tracking-widest text-[10px] text-slate-600">
                 Aucun paiement enregistré aujourd'hui.

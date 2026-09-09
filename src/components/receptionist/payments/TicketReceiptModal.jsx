@@ -1,47 +1,59 @@
-import React, { useState } from "react";
-import { Receipt, Coffee, Printer } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { Receipt, Coffee, Printer, Tag } from "lucide-react";
 import Modal from "../../common/Modal";
 import Button from "../../common/Button";
-import ThermalReceipt from "../../common/ThermalReceipt"; // <-- IMPORT DU MOTEUR
+import ThermalReceipt from "../../common/ThermalReceipt";
 
 export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
-  const [printTrigger, setPrintTrigger] = useState(0); // Déclencheur local
+  const [printTrigger, setPrintTrigger] = useState(0);
 
-  if (!ticketToView) return null;
+  // FIX CRITIQUE 2 : Utiliser useMemo pour que l'objet ne soit pas recréé à l'infini
+  const printPayload = useMemo(() => {
+    if (!ticketToView) return null;
 
-  // Préparer les données au format de l'imprimeur
-  const compiledCafeItems = [];
-  ticketToView.cafeOrders?.forEach((order) => {
-    order.items?.forEach((item) => {
-      compiledCafeItems.push({
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
+    const compiledCafeItems = [];
+    let cafeTotal = 0;
+
+    ticketToView.cafeOrders?.forEach((order) => {
+      cafeTotal += order.totalPrice;
+      order.items?.forEach((item) => {
+        compiledCafeItems.push({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        });
       });
     });
-  });
 
-  const printPayload = {
-    ticketId: ticketToView.id,
-    clientName: ticketToView.clientName,
-    barber: ticketToView.barber,
-    service: ticketToView.service,
-    haircutPrice:
-      ticketToView.price -
-      (ticketToView.cafeOrders?.reduce((acc, o) => acc + o.totalPrice, 0) || 0),
-    items: compiledCafeItems,
-    discountAmount: 0, // Les remises de l'historique sont déjà appliquées sur le finalHaircutPrice
-    tipAmount: ticketToView.tip || 0,
-    paidAmount: ticketToView.price,
-    unpaidDebt: ticketToView.unpaidAmount || 0,
-    grandTotal: ticketToView.price + (ticketToView.tip || 0),
-  };
+    // On calcule le prix brut de la coiffure.
+    // S'il existe dans la BDD (nouveau système) on le prend, sinon on le déduit (ancien système).
+    const calculatedHaircutPrice =
+      ticketToView.originalPrice != null
+        ? ticketToView.originalPrice
+        : ticketToView.price - cafeTotal;
+
+    return {
+      ticketId: ticketToView.id,
+      clientName: ticketToView.clientName,
+      barber: ticketToView.barber,
+      service: ticketToView.service,
+      haircutPrice: calculatedHaircutPrice,
+      items: compiledCafeItems,
+      discountAmount: ticketToView.discountAmount || 0,
+      tipAmount: ticketToView.tip || 0,
+      paidAmount: ticketToView.price,
+      unpaidDebt: ticketToView.unpaidAmount || 0,
+      grandTotal: ticketToView.price + (ticketToView.tip || 0),
+    };
+  }, [ticketToView]);
+
+  if (!ticketToView) return null;
 
   return (
     <>
       <Modal isOpen={isOpen} onClose={onClose}>
         <div className="flex flex-col bg-slate-950 max-h-[90vh]">
-          {/* Receipt Header */}
+          {/* Header */}
           <div className="px-6 pt-8 pb-6 border-b border-dashed border-slate-800 text-center shrink-0">
             <div className="w-10 h-10 bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto mb-4">
               <Receipt className="w-5 h-5 text-slate-400" />
@@ -58,7 +70,7 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
             </p>
           </div>
 
-          {/* Scrollable body */}
+          {/* Body */}
           <div className="flex-1 overflow-y-auto">
             <div className="px-6 py-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
@@ -81,7 +93,7 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
               </div>
 
               <div className="border border-slate-800">
-                {/* Haircut */}
+                {/* PRESTATION COIFFURE (AVEC AFFICHAGE PRIX ORIGINAL) */}
                 <div className="flex justify-between items-start px-4 py-3 border-b border-slate-800/60">
                   <div>
                     <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">
@@ -91,10 +103,25 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
                       {ticketToView.service || "Non spécifié"}
                     </p>
                   </div>
-                  <span className="font-mono font-bold text-slate-300 text-sm">
-                    DZD {printPayload.haircutPrice.toFixed(2)}
-                  </span>
+                  <div className="text-right flex flex-col items-end">
+                    {/* On affiche la valeur issue de notre Memo */}
+                    <span className="font-mono font-bold text-slate-300 text-sm">
+                      DZD {printPayload.haircutPrice.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
+
+                {/* NOUVEAU : AFFICHAGE DE LA REMISE SI ELLE EXISTE */}
+                {ticketToView.discountAmount > 0 && (
+                  <div className="flex justify-between items-center px-4 py-2.5 bg-red-500/10 border-b border-red-500/20 text-red-400">
+                    <span className="text-[10px] font-bold uppercase flex items-center gap-1.5">
+                      <Tag size={12} /> Remise Accordée
+                    </span>
+                    <span className="font-mono font-bold text-xs">
+                      - DZD {ticketToView.discountAmount.toFixed(2)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Café items */}
                 {ticketToView.cafeOrders?.map((order) =>
@@ -123,7 +150,7 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
                   <span className="text-[9px] uppercase tracking-widest font-bold text-slate-600">
-                    Total Facture
+                    Total Net Facturé
                   </span>
                   <span className="font-mono font-bold text-slate-400 text-xs">
                     DZD {ticketToView.price.toFixed(2)}
@@ -133,7 +160,7 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
                 {ticketToView.tip > 0 && (
                   <div className="flex justify-between items-center px-1">
                     <span className="text-[9px] uppercase tracking-widest font-bold text-green-600">
-                      Pourboire
+                      Pourboire (Inclus)
                     </span>
                     <span className="font-mono font-bold text-green-400 text-xs">
                       + DZD {ticketToView.tip.toFixed(2)}
@@ -154,7 +181,7 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
             </div>
           </div>
 
-          {/* Footer (Avec deux boutons SOLIDES côte-à-côté : Fermer et Ré-imprimer) */}
+          {/* Footer */}
           <div className="px-6 pb-6 pt-4 border-t border-slate-800 shrink-0 bg-slate-950 grid grid-cols-2 gap-3">
             <Button
               variant="outline"
@@ -164,19 +191,17 @@ export default function TicketReceiptModal({ isOpen, onClose, ticketToView }) {
               Fermer
             </Button>
 
-            {/* BOUTON RÉ-IMPRIMER SOLIDE VERT */}
             <Button
               variant="success"
               onClick={() => setPrintTrigger((prev) => prev + 1)}
               className="py-4 font-bold flex justify-center items-center gap-2"
             >
-              <Printer size={16} /> Imprimer Reçu
+              <Printer size={16} /> Ré-imprimer
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* --- MOTEUR D'IMPRESSION INVISIBLE SPÉCIFIQUE AU REÇU HISTORIQUE --- */}
       <ThermalReceipt
         type="receipt"
         data={printPayload}
