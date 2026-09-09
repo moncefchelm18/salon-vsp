@@ -25,6 +25,8 @@ export default function ThermalReceipt({
   useEffect(() => {
     if (printTrigger > 0 && data) {
       const timer = setTimeout(() => {
+        // Avec le mode kiosk-printing activé dans main.cjs,
+        // cette ligne imprime DIRECTEMENT sans jamais ouvrir la boîte noire !
         window.print();
       }, 350);
       return () => clearTimeout(timer);
