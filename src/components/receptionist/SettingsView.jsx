@@ -17,6 +17,7 @@ import {
   Trash2,
   Monitor,
   Wallet,
+  ArrowDownCircle,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -26,6 +27,8 @@ import Input from "../common/Input";
 import Modal from "../common/Modal";
 import ImageUpload from "../common/ImageUpload";
 import ThermalReceipt from "../common/ThermalReceipt";
+
+import { QRCodeSVG } from "qrcode.react";
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState("hardware"); // 'hardware' ou 'tickets'
@@ -39,8 +42,8 @@ export default function SettingsView() {
   });
   const [detectedPrinter, setDetectedPrinter] = useState(null);
 
-  // ── PARAMÈTRES MATÉRIEL : ÉCRAN VERT ARRIÈRE (NEWPOS) ──
-  const [customerDisplayPort, setCustomerDisplayPort] = useState("COM1");
+  // ── PARAMÈTRES MATÉRIEL : ÉCRAN VERT ARRIÈRE (COM2 VALIDÉ) ──
+  const [customerDisplayPort, setCustomerDisplayPort] = useState("COM2");
   const [cashDrawerPort, setCashDrawerPort] = useState("COM3");
 
   // ── PARAMÈTRES TICKETS ──
@@ -68,6 +71,12 @@ export default function SettingsView() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [isResetting, setIsResetting] = useState(false);
+
+  // ── ÉTATS POUR LES MISES À JOUR AUTOMATIQUES (OTA) ──
+  const [updateStatus, setUpdateStatus] = useState("idle"); // idle, checking, available, downloading, downloaded
+  const [newVersion, setNewVersion] = useState("");
+  const [downloadPercent, setDownloadPercent] = useState(0);
+
   const fileInputRef = useRef(null);
 
   const loadAllData = async () => {
@@ -81,7 +90,7 @@ export default function SettingsView() {
       setBusinessDayStartHour(settingsRes.data.business_day_start_hour || "6");
       setDailyRevenueGoal(settingsRes.data.daily_revenue_goal || "30000");
       setCloudBackupUrl(settingsRes.data.cloud_backup_url || "");
-      setCustomerDisplayPort(settingsRes.data.customer_display_port || "COM1");
+      setCustomerDisplayPort(settingsRes.data.customer_display_port || "COM2");
       setCashDrawerPort(settingsRes.data.cash_drawer_port || "COM3");
 
       setTicketSettings({
@@ -102,7 +111,7 @@ export default function SettingsView() {
 
       setSystemInfo(infoRes.data);
 
-      // Détecter l'imprimante réelle via Electron
+      // Détection de l'imprimante réelle via Electron
       if (window.electronAPI && window.electronAPI.getPrinters) {
         const printers = await window.electronAPI.getPrinters();
         const active =
@@ -129,6 +138,32 @@ export default function SettingsView() {
     loadAllData();
   }, []);
 
+  // ── ÉCOUTEURS D'ÉVÉNEMENTS ELECTRON POUR LA MISE À JOUR ──
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onUpdateAvailable) {
+      window.electronAPI.onUpdateAvailable((version) => {
+        setNewVersion(version);
+        setUpdateStatus("available");
+        toast.success(`Nouvelle version ${version} disponible !`);
+      });
+
+      window.electronAPI.onUpdateNotAvailable(() => {
+        setUpdateStatus("idle");
+        toast.success("Votre logiciel est déjà à jour !");
+      });
+
+      window.electronAPI.onDownloadProgress((percent) => {
+        setUpdateStatus("downloading");
+        setDownloadPercent(Math.round(percent));
+      });
+
+      window.electronAPI.onUpdateDownloaded(() => {
+        setUpdateStatus("downloaded");
+        toast.success("Mise à jour prête ! Cliquez pour redémarrer.");
+      });
+    }
+  }, []);
+
   const handleSaveAll = async (e) => {
     if (e) e.preventDefault();
     setIsSaving(true);
@@ -152,10 +187,9 @@ export default function SettingsView() {
     }
   };
 
-  // Test immédiat de l'écran vert client
+  // Test de l'écran vert client
   const handleTestDisplay = async () => {
     try {
-      // Affiche 1250.00 pendant 5 secondes, puis repasse tout seul à 0.00 !
       await api.post("/settings/customer-display", {
         amount: 1250.0,
         autoResetSeconds: 5,
@@ -166,11 +200,17 @@ export default function SettingsView() {
     }
   };
 
-  // Téléchargement Backup local
+  // Téléchargement sécurisé du Backup local
   const handleDownloadBackup = () => {
-    const API_BASE_URL =
-      import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-    window.open(`${API_BASE_URL}/settings/backup`, "_blank");
+    const link = document.createElement("a");
+    link.href = "/api/settings/backup";
+    link.setAttribute(
+      "download",
+      `Salon_VSP_Backup_${new Date().toISOString().slice(0, 10)}.db`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     toast.success("Téléchargement du fichier dev.db lancé.");
   };
 
@@ -247,6 +287,18 @@ export default function SettingsView() {
     }
   };
 
+  // Déclencher la recherche de mise à jour
+  const handleTriggerCheckUpdates = () => {
+    if (window.electronAPI && window.electronAPI.checkForUpdates) {
+      setUpdateStatus("checking");
+      window.electronAPI.checkForUpdates();
+    } else {
+      toast.error(
+        "Les mises à jour automatiques sont actives uniquement dans l'application installée (.exe).",
+      );
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="py-20 text-center animate-pulse text-brand uppercase tracking-widest text-xs font-bold">
@@ -254,10 +306,6 @@ export default function SettingsView() {
       </div>
     );
   }
-
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-    systemInfo.tabletUrl,
-  )}&bgcolor=0f172a&color=d4af37&qzone=1`;
 
   return (
     <div className="space-y-6">
@@ -286,7 +334,7 @@ export default function SettingsView() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════
-          VUE 1 : MATÉRIEL, BDD, IMPRIMANTE, ÉCRAN CLIENT & ZONE DANGER
+          VUE 1 : MATÉRIEL, BDD, IMPRIMANTE, ÉCRAN CLIENT & MAJ
       ══════════════════════════════════════════════════════════ */}
       {activeTab === "hardware" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -305,10 +353,12 @@ export default function SettingsView() {
 
               <div className="flex flex-col sm:flex-row items-center gap-6 bg-main p-4 border border-subtle">
                 <div className="bg-slate-900 p-2 border-2 border-brand/40 shrink-0 shadow-lg">
-                  <img
-                    src={qrCodeUrl}
-                    alt="QR Code"
-                    className="w-32 h-32 object-contain"
+                  <QRCodeSVG
+                    value={systemInfo.tabletUrl}
+                    size={128}
+                    bgColor="#0f172a"
+                    fgColor="#d4af37"
+                    level="H"
                   />
                 </div>
                 <div className="flex-1 space-y-2 w-full text-center sm:text-left">
@@ -362,7 +412,7 @@ export default function SettingsView() {
                     <p className="text-[10px] text-t-muted font-bold mt-0.5">
                       {detectedPrinter?.isDefault
                         ? "Définie par Défaut Windows (Recommandé)"
-                        : "Imprimante USB détectée"}
+                        : "Imprimante USB connectée"}
                     </p>
                   </div>
                 </div>
@@ -385,7 +435,7 @@ export default function SettingsView() {
               </Button>
             </div>
 
-            {/* ── NOUVEAU : AFFICHEUR CLIENT ARRIÈRE (ÉCRAN VERT NEWPOS) ── */}
+            {/* AFFICHEUR CLIENT ARRIÈRE (ÉCRAN VERT NEWPOS) */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand border-b border-subtle pb-3 mb-4 flex items-center gap-2">
                 <Monitor size={16} /> Afficheur Client Arrière (Écran Vert
@@ -402,27 +452,40 @@ export default function SettingsView() {
                     onChange={(e) => setCustomerDisplayPort(e.target.value)}
                     className="w-full bg-main border border-subtle text-t-main px-4 py-3 font-bold text-xs uppercase focus:outline-none focus:border-brand rounded-none cursor-pointer"
                   >
-                    <option value="COM1">COM1 (Standard NewPOS)</option>
-                    <option value="COM2">COM2</option>
+                    <option value="COM2">COM2 (Standard Validé)</option>
+                    <option value="COM1">COM1</option>
                     <option value="COM3">COM3</option>
                     <option value="COM4">COM4</option>
                     <option value="none">Désactivé</option>
                   </select>
-                  <p className="text-[10px] text-t-muted italic mt-1 font-semibold">
-                    * Correspond au port configuré dans le Gestionnaire de
-                    périphériques Windows.
-                  </p>
                 </div>
 
-                <Button
-                  variant="secondary"
-                  fullWidth
-                  onClick={handleTestDisplay}
-                  className="py-3.5 text-xs font-bold justify-center bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500 hover:text-white"
-                >
-                  <Sparkles size={15} className="mr-2" /> Tester l'Afficheur
-                  (Afficher 1250.00 DZD)
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={handleTestDisplay}
+                    className="py-3 text-xs font-bold justify-center bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500 hover:text-white"
+                  >
+                    <Sparkles size={15} className="mr-1.5" /> Tester (1250 DA)
+                  </Button>
+
+                  <Button
+                    variant="danger"
+                    onClick={async () => {
+                      try {
+                        await api.post("/settings/customer-display", {
+                          amount: 0,
+                        });
+                        toast.success("Écran remis à 0.00");
+                      } catch (e) {
+                        toast.error("Erreur.");
+                      }
+                    }}
+                    className="py-3 text-xs font-bold justify-center"
+                  >
+                    Vider (0.00)
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -442,10 +505,10 @@ export default function SettingsView() {
                     onChange={(e) => setCashDrawerPort(e.target.value)}
                     className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand rounded-none cursor-pointer"
                   >
+                    <option value="COM3">COM 3 (Validé USB Prolific)</option>
                     <option value="COM1">COM 1</option>
                     <option value="COM2">COM 2</option>
-                    <option value="COM3">COM 3 (Fréquent USB)</option>
-                    <option value="COM4">COM 4 (Fréquent USB)</option>
+                    <option value="COM4">COM 4</option>
                     <option value="none">Désactivé</option>
                   </select>
                 </div>
@@ -469,8 +532,83 @@ export default function SettingsView() {
             </div>
           </div>
 
-          {/* COLONNE DROITE : GESTION BDD, IMPORT, EXPORT & ZONE DE DANGER */}
+          {/* COLONNE DROITE : GESTION BDD, MISES À JOUR & ZONE DE DANGER */}
           <div className="space-y-6">
+            {/* ── NOUVEAU : CARTE MISE À JOUR LOGICIEL (OTA) ── */}
+            <div className="bg-surface border border-subtle p-6 shadow-sm">
+              <div className="flex justify-between items-center border-b border-subtle pb-3 mb-4">
+                <h3 className="text-sm font-bold uppercase tracking-widest text-brand flex items-center gap-2">
+                  <ArrowDownCircle size={16} /> Mises à jour du Logiciel
+                </h3>
+                <span className="text-[10px] text-t-muted font-bold font-mono">
+                  {updateStatus === "idle" && "Version 1.0.0"}
+                  {updateStatus === "available" && `v${newVersion} prête`}
+                  {updateStatus === "downloading" && `${downloadPercent}%`}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-t-muted leading-relaxed">
+                  Vérifiez en un clic si une nouvelle version avec des
+                  améliorations est disponible pour votre caisse.
+                </p>
+
+                {updateStatus === "idle" && (
+                  <Button
+                    variant="secondary"
+                    fullWidth
+                    onClick={handleTriggerCheckUpdates}
+                    className="py-3.5 text-xs font-bold justify-center"
+                  >
+                    Rechercher une mise à jour
+                  </Button>
+                )}
+
+                {updateStatus === "checking" && (
+                  <div className="p-3 bg-main text-center text-xs font-bold text-amber-500 animate-pulse border border-subtle">
+                    Vérification des mises à jour en cours...
+                  </div>
+                )}
+
+                {updateStatus === "available" && (
+                  <Button
+                    variant="success"
+                    fullWidth
+                    onClick={() => window.electronAPI.downloadUpdate()}
+                    className="py-3.5 text-xs font-bold justify-center"
+                  >
+                    Télécharger la Version {newVersion}
+                  </Button>
+                )}
+
+                {updateStatus === "downloading" && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-mono font-bold text-t-muted">
+                      <span>Téléchargement...</span>
+                      <span>{downloadPercent}%</span>
+                    </div>
+                    <div className="w-full bg-main h-3 border border-subtle overflow-hidden">
+                      <div
+                        className="bg-brand h-full transition-all duration-300"
+                        style={{ width: `${downloadPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {updateStatus === "downloaded" && (
+                  <Button
+                    variant="danger"
+                    fullWidth
+                    onClick={() => window.electronAPI.installUpdate()}
+                    className="py-4 text-xs font-bold justify-center bg-green-600 hover:bg-green-500 text-white shadow-lg animate-pulse"
+                  >
+                    Redémarrer &amp; Installer la Mise à Jour
+                  </Button>
+                )}
+              </div>
+            </div>
+
             {/* CARTE SAUVEGARDE & IMPORT */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <div className="flex justify-between items-center border-b border-subtle pb-3 mb-4">
@@ -482,7 +620,6 @@ export default function SettingsView() {
                 </span>
               </div>
 
-              {/* Input invisible pour l'import de fichier */}
               <input
                 type="file"
                 ref={fileInputRef}

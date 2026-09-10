@@ -179,14 +179,19 @@ export default function BarbersManager() {
                 <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 shadow-sm">
                   POSTE {barber.poste || "--"}
                 </div>
-                <img
-                  src={
-                    barber.image ||
-                    `https://ui-avatars.com/api/?name=${barber.name}&background=1E3A8A&color=ffffff&rounded=false&size=150&bold=true`
-                  }
-                  alt={barber.name}
-                  className="w-32 h-32 object-cover border-4 border-surface shadow-sm opacity-90 group-hover:opacity-100 transition-opacity"
-                />
+                {barber.image ? (
+                  <img
+                    src={barber.image}
+                    alt={barber.name}
+                    className="w-32 h-32 object-cover border-4 border-surface shadow-sm opacity-90 group-hover:opacity-100 transition-opacity"
+                  />
+                ) : (
+                  <div className="w-32 h-32 bg-slate-800 border-4 border-surface shadow-sm opacity-90 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="text-5xl font-black text-blue-500 uppercase">
+                      {barber.name ? barber.name.charAt(0) : "?"}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Info Part */}

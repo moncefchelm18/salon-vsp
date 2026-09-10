@@ -551,16 +551,25 @@ export default function ClientsManager() {
                 />
 
                 <div className="flex items-center gap-2.5">
-                  <img
-                    src={
-                      b.image ||
-                      `https://ui-avatars.com/api/?name=${b.name}&background=1E3A8A&color=ffffff&rounded=true&size=100&bold=true`
-                    }
-                    alt={b.name}
-                    className={`w-9 h-9 rounded-full object-cover border-2 shrink-0 ${
-                      b.isBusy ? "border-red-500" : "border-green-500"
-                    }`}
-                  />
+                  <div className="relative shrink-0">
+                    {b.image ? (
+                      <img
+                        src={b.image}
+                        alt={b.name}
+                        className={`w-9 h-9 rounded-full object-cover border-2 shrink-0 ${b.isBusy ? "border-red-500" : "border-green-500"} shadow-sm transition-all`}
+                      />
+                    ) : (
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center border-2 shrink-0 shadow-sm ${b.isBusy ? "bg-red-950 border-red-500" : "bg-green-950 border-green-500"}`}
+                      >
+                        <span
+                          className={`text-sm font-black uppercase ${b.isBusy ? "text-red-500" : "text-green-500"}`}
+                        >
+                          {b.name ? b.name.charAt(0) : "?"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-t-main text-xs uppercase truncate">
                       {b.name}

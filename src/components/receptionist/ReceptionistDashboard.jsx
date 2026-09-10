@@ -314,14 +314,23 @@ export default function ReceptionistDashboard() {
                   }`}
                 >
                   <div className="relative">
-                    <img
-                      src={
-                        barber.image ||
-                        `https://ui-avatars.com/api/?name=${barber.name}&background=D4AF37&color=1E1E1E&rounded=false&size=150&bold=true`
-                      }
-                      alt={barber.name}
-                      className={`w-20 h-20 object-cover rounded-full transition-all ${isBusy ? "border-amber-500" : "border-slate-700 grayscale"}`}
-                    />
+                    {barber.image ? (
+                      <img
+                        src={barber.image}
+                        alt={barber.name}
+                        className={`w-20 h-20 object-cover rounded-full transition-all ${isBusy ? "border-amber-500" : "border-slate-700 grayscale"}`}
+                      />
+                    ) : (
+                      <div
+                        className={`w-20 h-20 rounded-full flex items-center justify-center border-4 shadow-inner ${isBusy ? "bg-slate-900 border-amber-500" : "bg-slate-800 border-slate-700"}`}
+                      >
+                        <span
+                          className={`text-3xl font-black uppercase ${isBusy ? "text-amber-500" : "text-slate-500"}`}
+                        >
+                          {barber.name ? barber.name.charAt(0) : "?"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1 mt-2">
                     <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">

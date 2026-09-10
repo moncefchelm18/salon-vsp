@@ -109,14 +109,19 @@ export default function BarberTabletView() {
                 onClick={() => openPinModal(b)}
                 className="bg-slate-900 border border-slate-800 hover:border-amber-500 p-4 sm:p-6 flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 group shadow-xl"
               >
-                <img
-                  src={
-                    b.image ||
-                    `https://ui-avatars.com/api/?name=${b.name}&background=D4AF37&color=1E1E1E&rounded=false&size=150&bold=true`
-                  }
-                  alt={b.name}
-                  className="w-20 h-20 sm:w-24 sm:h-24 mb-3 sm:mb-4 object-cover border-4 border-slate-800 group-hover:border-amber-500/50 transition-colors rounded-full sm:rounded-none"
-                />
+                {b.image ? (
+                  <img
+                    src={b.image}
+                    alt={b.name}
+                    className="w-20 h-20 sm:w-24 sm:h-24 mb-3 sm:mb-4 object-cover border-4 border-slate-800 group-hover:border-amber-500/50 transition-colors rounded-full sm:rounded-none"
+                  />
+                ) : (
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 mb-3 sm:mb-4 bg-slate-800 border-4 border-slate-700 group-hover:border-amber-500/50 transition-colors rounded-full sm:rounded-none flex items-center justify-center shadow-inner">
+                    <span className="text-3xl font-black text-amber-500 uppercase">
+                      {b.name ? b.name.charAt(0) : "?"}
+                    </span>
+                  </div>
+                )}
                 <h3 className="text-sm sm:text-lg font-bold text-slate-100 uppercase tracking-wide group-hover:text-amber-400 text-center truncate w-full">
                   {b.name}
                 </h3>
