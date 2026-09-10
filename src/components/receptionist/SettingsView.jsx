@@ -1,57 +1,74 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Printer,
   Database,
   Wifi,
   Save,
   Download,
+  Upload,
   Settings2,
   CheckCircle2,
+  AlertTriangle,
   CloudUpload,
   Copy,
   Receipt,
   Image as ImageIcon,
   Sparkles,
+  Trash2,
+  Monitor,
+  Wallet,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
 
 import Button from "../common/Button";
 import Input from "../common/Input";
+import Modal from "../common/Modal";
 import ImageUpload from "../common/ImageUpload";
 import ThermalReceipt from "../common/ThermalReceipt";
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState("hardware"); // 'hardware' ou 'tickets'
-  const [previewType, setPreviewType] = useState("queue"); // 'queue' (Attente) ou 'receipt' (Facture)
+  const [previewType, setPreviewType] = useState("queue");
 
-  // Infos Réseau Réelles
+  // Infos Système & Imprimante Détectée
   const [systemInfo, setSystemInfo] = useState({
     localIp: "127.0.0.1",
-    tabletUrl: "http://localhost:3001/coiffeur",
+    tabletUrl: "http://localhost:5000/coiffeur",
     dbSizeMB: "0.00",
   });
+  const [detectedPrinter, setDetectedPrinter] = useState(null);
 
-  // ── PARAMÈTRES PERSONNALISATION TICKET ──
+  // ── PARAMÈTRES MATÉRIEL : ÉCRAN VERT ARRIÈRE (NEWPOS) ──
+  const [customerDisplayPort, setCustomerDisplayPort] = useState("COM1");
+  const [cashDrawerPort, setCashDrawerPort] = useState("COM3");
+
+  // ── PARAMÈTRES TICKETS ──
   const [ticketSettings, setTicketSettings] = useState({
     receipt_logo: "",
     receipt_header_title: "Salon VSP",
     receipt_header_subtitle: "Coiffure Masculine & Espace Café",
     receipt_phone: "0550 00 00 00",
-    receipt_address: "Alger, Algérie - Instagram : @salon_vsp",
-    receipt_footer: "Merci de votre visite !\nÀ très bientôt chez Salon VSP.",
+    receipt_address: "Alger, Algérie",
+    receipt_footer: "Merci pour votre visite !\nÀ très bientôt.",
     receipt_queue_message: "Veuillez patienter, votre tour approche.",
   });
 
   // Paramètres Caisse & Cloud
   const [businessDayStartHour, setBusinessDayStartHour] = useState("6");
+  const [dailyRevenueGoal, setDailyRevenueGoal] = useState("30000");
   const [cloudBackupUrl, setCloudBackupUrl] = useState("");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingCloud, setIsUploadingCloud] = useState(false);
   const [testPrintTrigger, setTestPrintTrigger] = useState(0);
-  const [dailyRevenueGoal, setDailyRevenueGoal] = useState("30000"); // 30 000 DZD par défaut
+
+  // États pour la Réinitialisation et l'Importation de la Base de Données
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [isResetting, setIsResetting] = useState(false);
+  const fileInputRef = useRef(null);
 
   const loadAllData = async () => {
     setIsLoading(true);
@@ -62,28 +79,45 @@ export default function SettingsView() {
       ]);
 
       setBusinessDayStartHour(settingsRes.data.business_day_start_hour || "6");
-      setCloudBackupUrl(settingsRes.data.cloud_backup_url || "");
       setDailyRevenueGoal(settingsRes.data.daily_revenue_goal || "30000");
+      setCloudBackupUrl(settingsRes.data.cloud_backup_url || "");
+      setCustomerDisplayPort(settingsRes.data.customer_display_port || "COM1");
+      setCashDrawerPort(settingsRes.data.cash_drawer_port || "COM3");
 
-      // Charger les textes personnalisés du ticket
       setTicketSettings({
         receipt_logo: settingsRes.data.receipt_logo || "",
         receipt_header_title:
-          settingsRes.data.receipt_header_title || "Salon VSP",
-        receipt_header_subtitle:
-          settingsRes.data.receipt_header_subtitle ||
-          "Coiffure Masculine & Espace Café",
-        receipt_phone: settingsRes.data.receipt_phone || "0550 00 00 00",
-        receipt_address: settingsRes.data.receipt_address || "Alger, Algérie",
+          settingsRes.data.receipt_header_title !== undefined
+            ? settingsRes.data.receipt_header_title
+            : "Salon VSP",
+        receipt_header_subtitle: settingsRes.data.receipt_header_subtitle || "",
+        receipt_phone: settingsRes.data.receipt_phone || "",
+        receipt_address: settingsRes.data.receipt_address || "",
         receipt_footer:
-          settingsRes.data.receipt_footer ||
-          "Merci de votre visite !\nÀ très bientôt chez Salon VSP.",
+          settingsRes.data.receipt_footer || "Merci pour votre visite !",
         receipt_queue_message:
           settingsRes.data.receipt_queue_message ||
           "Veuillez patienter, votre tour approche.",
       });
 
       setSystemInfo(infoRes.data);
+
+      // Détecter l'imprimante réelle via Electron
+      if (window.electronAPI && window.electronAPI.getPrinters) {
+        const printers = await window.electronAPI.getPrinters();
+        const active =
+          printers.find((p) => {
+            const n = p.name.toLowerCase();
+            return (
+              n.includes("xprinter") ||
+              n.includes("xp-80") ||
+              n.includes("pos-80")
+            );
+          }) ||
+          printers.find((p) => p.isDefault) ||
+          printers[0];
+        setDetectedPrinter(active || null);
+      }
     } catch (err) {
       toast.error("Erreur de synchronisation.");
     } finally {
@@ -95,28 +129,44 @@ export default function SettingsView() {
     loadAllData();
   }, []);
 
-  // Sauvegarder TOUS les paramètres (Ticket + Caisse + Cloud)
   const handleSaveAll = async (e) => {
     if (e) e.preventDefault();
     setIsSaving(true);
     try {
       const payload = {
         business_day_start_hour: businessDayStartHour,
+        daily_revenue_goal: dailyRevenueGoal,
         cloud_backup_url: cloudBackupUrl.trim(),
-        daily_revenue_goal: dailyRevenueGoal, // <-- AJOUT DE L'OBJECTIF
+        customer_display_port: customerDisplayPort,
+        cash_drawer_port: cashDrawerPort,
         ...ticketSettings,
       };
 
       await api.post("/settings", payload);
       localStorage.setItem("vsp_receipt_settings", JSON.stringify(payload));
-      toast.success("Paramètres et personnalisation des tickets enregistrés !");
+      toast.success("Paramètres enregistrés avec succès !");
     } catch (err) {
-      toast.error("Erreur d'enregistrement.");
+      toast.error("Erreur lors de la sauvegarde.");
     } finally {
       setIsSaving(false);
     }
   };
 
+  // Test immédiat de l'écran vert client
+  const handleTestDisplay = async () => {
+    try {
+      // Affiche 1250.00 pendant 5 secondes, puis repasse tout seul à 0.00 !
+      await api.post("/settings/customer-display", {
+        amount: 1250.0,
+        autoResetSeconds: 5,
+      });
+      toast.success("Affichage test (Retour à 0.00 dans 5 secondes)");
+    } catch (e) {
+      toast.error("Erreur de transmission à l'écran.");
+    }
+  };
+
+  // Téléchargement Backup local
   const handleDownloadBackup = () => {
     const API_BASE_URL =
       import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -124,24 +174,83 @@ export default function SettingsView() {
     toast.success("Téléchargement du fichier dev.db lancé.");
   };
 
+  // Importation d'un fichier .db
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".db")) {
+      return toast.error(
+        "Veuillez sélectionner un fichier valide se terminant par .db",
+      );
+    }
+
+    if (
+      !window.confirm(
+        `Remplacer la base de données actuelle par "${file.name}" ? Vos données actuelles seront écrasées.`,
+      )
+    ) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64Data = reader.result;
+      try {
+        await api.post("/settings/import-db", { filedata: base64Data });
+        toast.success("Base de données restaurée avec succès !");
+        loadAllData();
+      } catch (err) {
+        toast.error("Échec de la restauration de la base de données.");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Envoi Cloud Drive
   const handleSendCloudBackup = async () => {
     if (!cloudBackupUrl.trim())
-      return toast.error("Configurez d'abord l'URL Cloud ci-dessous.");
+      return toast.error("Veuillez renseigner l'URL Cloud ci-dessous.");
     setIsUploadingCloud(true);
     try {
       const res = await api.post("/settings/cloud-backup");
       toast.success(res.data.message);
     } catch (err) {
-      toast.error(err.response?.data?.message || "Échec de l'envoi.");
+      toast.error(
+        err.response?.data?.message || "Échec de l'envoi vers le Cloud.",
+      );
     } finally {
       setIsUploadingCloud(false);
+    }
+  };
+
+  // Réinitialisation d'usine complète (salonvspdelete)
+  const handleConfirmResetDb = async (e) => {
+    e.preventDefault();
+    if (deletePassword !== "salonvspdelete") {
+      return toast.error("Mot de passe de sécurité incorrect.");
+    }
+
+    setIsResetting(true);
+    try {
+      await api.post("/settings/reset-db", { password: deletePassword });
+      toast.success("Base de données réinitialisée à zéro !");
+      setIsResetModalOpen(false);
+      setDeletePassword("");
+      loadAllData();
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Erreur lors de la réinitialisation.",
+      );
+    } finally {
+      setIsResetting(false);
     }
   };
 
   if (isLoading) {
     return (
       <div className="py-20 text-center animate-pulse text-brand uppercase tracking-widest text-xs font-bold">
-        Chargement des paramètres...
+        Chargement de la configuration...
       </div>
     );
   }
@@ -152,7 +261,7 @@ export default function SettingsView() {
 
   return (
     <div className="space-y-6">
-      {/* ── ONGLETS DU HAUT (MATÉRIEL vs TICKETS) ── */}
+      {/* ── ONGLETS DE NAVIGATION ── */}
       <div className="flex gap-2 p-1 bg-surface border border-subtle w-fit">
         <button
           onClick={() => setActiveTab("hardware")}
@@ -162,7 +271,7 @@ export default function SettingsView() {
               : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <Settings2 size={16} /> Matériel, Réseau &amp; Sécurité
+          <Settings2 size={16} /> Matériel, Réseau &amp; Données
         </button>
         <button
           onClick={() => setActiveTab("tickets")}
@@ -172,24 +281,25 @@ export default function SettingsView() {
               : "text-t-muted hover:bg-main hover:text-t-main"
           }`}
         >
-          <Receipt size={16} /> Personnalisation des Tickets (Logo &amp; Textes)
+          <Receipt size={16} /> Personnalisation des Tickets
         </button>
       </div>
 
       {/* ══════════════════════════════════════════════════════════
-          VUE 1 : MATÉRIEL, IP, CLOUD & HEURE DE BASCULE
+          VUE 1 : MATÉRIEL, BDD, IMPRIMANTE, ÉCRAN CLIENT & ZONE DANGER
       ══════════════════════════════════════════════════════════ */}
       {activeTab === "hardware" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* GAUCHE : QR CODE & IMPRIMANTE */}
+          {/* COLONNE GAUCHE : RÉSEAU, IMPRIMANTE & ÉCRAN CLIENT VERT */}
           <div className="space-y-6">
+            {/* QR CODE & ADRESSE SERVEUR */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <div className="flex justify-between items-center border-b border-subtle pb-3 mb-4">
                 <h3 className="text-sm font-bold uppercase tracking-widest text-brand flex items-center gap-2">
-                  <Wifi size={16} /> Accès Coiffeurs (Réseau Local)
+                  <Wifi size={16} /> Accès Coiffeurs (Wi-Fi Local)
                 </h3>
                 <span className="text-[9px] font-mono font-bold bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-0.5">
-                  IP FIXE ACTIVE
+                  SERVEUR ACTIF
                 </span>
               </div>
 
@@ -202,18 +312,22 @@ export default function SettingsView() {
                   />
                 </div>
                 <div className="flex-1 space-y-2 w-full text-center sm:text-left">
-                  <span className="text-[10px] uppercase font-bold text-t-muted">
-                    IP Serveur :
-                  </span>
-                  <p className="font-mono font-bold text-brand text-lg">
-                    {systemInfo.localIp}
-                  </p>
-                  <span className="text-[10px] uppercase font-bold text-t-muted">
-                    Lien Tablette :
-                  </span>
-                  <code className="text-[11px] font-mono font-bold text-slate-200 bg-surface border border-subtle px-2 py-1 block truncate">
-                    {systemInfo.tabletUrl}
-                  </code>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-t-muted">
+                      IP Machine :
+                    </span>
+                    <p className="font-mono font-bold text-brand text-lg">
+                      {systemInfo.localIp}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-t-muted">
+                      Lien Tablette :
+                    </span>
+                    <code className="text-[11px] font-mono font-bold text-slate-200 bg-surface border border-subtle px-2 py-1 block truncate">
+                      {systemInfo.tabletUrl}
+                    </code>
+                  </div>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -222,16 +336,41 @@ export default function SettingsView() {
                     }}
                     className="py-2 text-xs w-full justify-center mt-2"
                   >
-                    <Copy size={13} className="mr-1" /> Copier l'URL
+                    <Copy size={13} className="mr-1.5" /> Copier l'URL
                   </Button>
                 </div>
               </div>
             </div>
 
+            {/* IMPRIMANTE THERMIQUE DÉTECTÉE */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand border-b border-subtle pb-3 mb-4 flex items-center gap-2">
-                <Printer size={16} /> Imprimante Thermique (80mm)
+                <Printer size={16} /> Imprimante Thermique (Détection Réelle)
               </h3>
+
+              <div className="flex items-center justify-between p-4 bg-main border border-subtle mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-surface border border-subtle text-green-500">
+                    <Printer size={22} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-t-main text-xs uppercase">
+                      {detectedPrinter
+                        ? detectedPrinter.name
+                        : "Xprinter XP-80"}
+                    </p>
+                    <p className="text-[10px] text-t-muted font-bold mt-0.5">
+                      {detectedPrinter?.isDefault
+                        ? "Définie par Défaut Windows (Recommandé)"
+                        : "Imprimante USB détectée"}
+                    </p>
+                  </div>
+                </div>
+                <span className="flex items-center gap-1 text-[10px] text-green-500 font-bold uppercase bg-green-500/10 border border-green-500/20 px-2 py-1">
+                  <CheckCircle2 size={12} /> Prête
+                </span>
+              </div>
+
               <Button
                 variant="secondary"
                 fullWidth
@@ -242,45 +381,149 @@ export default function SettingsView() {
                 className="py-4 text-xs font-bold justify-center"
               >
                 <Printer size={16} className="mr-2" /> Tester l'Imprimante
-                (Sortie Ticket)
+                (Sortie Ticket Directe)
               </Button>
+            </div>
+
+            {/* ── NOUVEAU : AFFICHEUR CLIENT ARRIÈRE (ÉCRAN VERT NEWPOS) ── */}
+            <div className="bg-surface border border-subtle p-6 shadow-sm">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-brand border-b border-subtle pb-3 mb-4 flex items-center gap-2">
+                <Monitor size={16} /> Afficheur Client Arrière (Écran Vert
+                NewPOS)
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-t-muted mb-1">
+                    Port Série (COM) de l'afficheur arrière :
+                  </label>
+                  <select
+                    value={customerDisplayPort}
+                    onChange={(e) => setCustomerDisplayPort(e.target.value)}
+                    className="w-full bg-main border border-subtle text-t-main px-4 py-3 font-bold text-xs uppercase focus:outline-none focus:border-brand rounded-none cursor-pointer"
+                  >
+                    <option value="COM1">COM1 (Standard NewPOS)</option>
+                    <option value="COM2">COM2</option>
+                    <option value="COM3">COM3</option>
+                    <option value="COM4">COM4</option>
+                    <option value="none">Désactivé</option>
+                  </select>
+                  <p className="text-[10px] text-t-muted italic mt-1 font-semibold">
+                    * Correspond au port configuré dans le Gestionnaire de
+                    périphériques Windows.
+                  </p>
+                </div>
+
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={handleTestDisplay}
+                  className="py-3.5 text-xs font-bold justify-center bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500 hover:text-white"
+                >
+                  <Sparkles size={15} className="mr-2" /> Tester l'Afficheur
+                  (Afficher 1250.00 DZD)
+                </Button>
+              </div>
+            </div>
+
+            {/* CARTE : TIROIR-CAISSE USB */}
+            <div className="bg-surface border border-subtle p-6 shadow-sm">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-brand border-b border-subtle pb-3 mb-4 flex items-center gap-2">
+                <Wallet size={16} /> Tiroir-Caisse USB (Éjection Automatique)
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-t-muted mb-1">
+                    Port Série COM du tiroir :
+                  </label>
+                  <select
+                    value={cashDrawerPort}
+                    onChange={(e) => setCashDrawerPort(e.target.value)}
+                    className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand rounded-none cursor-pointer"
+                  >
+                    <option value="COM1">COM 1</option>
+                    <option value="COM2">COM 2</option>
+                    <option value="COM3">COM 3 (Fréquent USB)</option>
+                    <option value="COM4">COM 4 (Fréquent USB)</option>
+                    <option value="none">Désactivé</option>
+                  </select>
+                </div>
+
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={async () => {
+                    try {
+                      await api.post("/settings/open-drawer");
+                      toast.success("Signal d'ouverture envoyé !");
+                    } catch (e) {
+                      toast.error("Erreur de communication avec le tiroir.");
+                    }
+                  }}
+                  className="py-3 text-xs font-bold justify-center"
+                >
+                  Tester l'Ouverture (Ouvrir le Tiroir)
+                </Button>
+              </div>
             </div>
           </div>
 
-          {/* DROITE : BDD CLOUD & RÈGLES */}
+          {/* COLONNE DROITE : GESTION BDD, IMPORT, EXPORT & ZONE DE DANGER */}
           <div className="space-y-6">
+            {/* CARTE SAUVEGARDE & IMPORT */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <div className="flex justify-between items-center border-b border-subtle pb-3 mb-4">
                 <h3 className="text-sm font-bold uppercase tracking-widest text-brand flex items-center gap-2">
-                  <Database size={16} /> Sauvegarde Base de Données
+                  <Database size={16} /> Sauvegardes &amp; Restauration BDD
                 </h3>
-                <span className="font-mono text-[10px] text-t-muted font-bold">
+                <span className="font-mono text-[10px] font-bold text-t-muted">
                   {systemInfo.dbSizeMB} MB
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              {/* Input invisible pour l'import de fichier */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".db"
+                className="hidden"
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <Button
                   variant="secondary"
                   onClick={handleDownloadBackup}
                   className="py-3.5 text-xs font-bold justify-center"
                 >
-                  <Download size={15} className="mr-1.5" /> Backup Local (.db)
+                  <Download size={15} className="mr-1.5" /> Exporter (.db)
                 </Button>
                 <Button
-                  variant="success"
-                  onClick={handleSendCloudBackup}
-                  disabled={isUploadingCloud}
-                  className="py-3.5 text-xs font-bold justify-center"
+                  variant="secondary"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="py-3.5 text-xs font-bold justify-center bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500 hover:text-white"
                 >
-                  <CloudUpload size={15} className="mr-1.5" />{" "}
-                  {isUploadingCloud ? "Envoi..." : "Envoyer au Cloud"}
+                  <Upload size={15} className="mr-1.5" /> Importer Backup (.db)
                 </Button>
               </div>
 
+              <Button
+                variant="success"
+                fullWidth
+                onClick={handleSendCloudBackup}
+                disabled={isUploadingCloud}
+                className="py-3.5 text-xs font-bold justify-center mb-4"
+              >
+                <CloudUpload size={15} className="mr-1.5" />{" "}
+                {isUploadingCloud
+                  ? "Envoi en cours..."
+                  : "Sauvegarder dans le Cloud (Drive)"}
+              </Button>
+
               <div className="bg-main p-3 border border-subtle space-y-1">
                 <label className="text-[10px] font-bold uppercase text-t-muted">
-                  Lien Webhook Google Drive :
+                  Lien Webhook Cloud Google Drive :
                 </label>
                 <input
                   type="url"
@@ -292,9 +535,10 @@ export default function SettingsView() {
               </div>
             </div>
 
+            {/* RÈGLES DE CAISSE ET OBJECTIF */}
             <div className="bg-surface border border-subtle p-6 shadow-sm">
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand border-b border-subtle pb-3 mb-4 flex items-center gap-2">
-                <Receipt size={16} /> Règle de Clôture Quotidienne
+                <Receipt size={16} /> Règle de Clôture &amp; Objectif
               </h3>
               <div className="space-y-4">
                 <div>
@@ -304,7 +548,7 @@ export default function SettingsView() {
                   <select
                     value={businessDayStartHour}
                     onChange={(e) => setBusinessDayStartHour(e.target.value)}
-                    className="w-full bg-main border border-subtle text-t-main px-4 py-3 font-bold text-xs uppercase focus:outline-none focus:border-brand cursor-pointer"
+                    className="w-full bg-main border border-subtle text-t-main px-4 py-3 font-bold text-xs uppercase focus:outline-none focus:border-brand rounded-none cursor-pointer"
                   >
                     <option value="0">Minuit (00h00)</option>
                     <option value="2">02h00 du matin</option>
@@ -315,9 +559,9 @@ export default function SettingsView() {
                     <option value="8">08h00 du matin</option>
                   </select>
                 </div>
-                {/* ── METTEZ LE BLOC EXACTEMENT ICI ! ── */}
+
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-1">
+                  <label className="block text-xs font-bold uppercase text-t-muted mb-1">
                     Objectif de Chiffre d'Affaires Journalier (DZD)
                   </label>
                   <input
@@ -325,7 +569,6 @@ export default function SettingsView() {
                     step="1000"
                     value={dailyRevenueGoal}
                     onChange={(e) => setDailyRevenueGoal(e.target.value)}
-                    placeholder="Ex: 30000"
                     className="w-full bg-main border border-subtle text-t-main px-4 py-3 font-mono font-bold text-sm focus:outline-none focus:border-brand rounded-none"
                   />
                   <p className="text-[10px] text-t-muted italic mt-1 font-semibold">
@@ -333,6 +576,7 @@ export default function SettingsView() {
                     principal.
                   </p>
                 </div>
+
                 <Button
                   variant="success"
                   fullWidth
@@ -341,130 +585,132 @@ export default function SettingsView() {
                   className="py-4 text-xs font-bold"
                 >
                   <Save size={16} className="mr-2" />{" "}
-                  {isSaving ? "Sauvegarde..." : "Enregistrer"}
+                  {isSaving ? "Sauvegarde..." : "Enregistrer les Paramètres"}
                 </Button>
               </div>
+            </div>
+
+            {/* ── ZONE DE DANGER : RÉINITIALISATION COMPLÈTE ── */}
+            <div className="bg-red-950/20 border-2 border-red-500/40 p-6 shadow-sm">
+              <div className="flex items-center gap-2 text-red-500 mb-2">
+                <AlertTriangle size={20} />
+                <h3 className="text-sm font-bold uppercase tracking-widest">
+                  Zone de Danger (Remise à Zéro)
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                Cette opération supprime définitivement tous les tickets,
+                clients, dépenses et ventes pour remettre le logiciel à neuf.
+                Action irréversible protégée par mot de passe.
+              </p>
+              <Button
+                variant="danger"
+                fullWidth
+                onClick={() => {
+                  setDeletePassword("");
+                  setIsResetModalOpen(true);
+                }}
+                className="py-3.5 text-xs font-bold bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/20"
+              >
+                <Trash2 size={16} className="mr-2" /> Réinitialiser toute la
+                Base de Données
+              </Button>
             </div>
           </div>
         </div>
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          VUE 2 : PERSONNALISATION COMPLÈTE DU TICKET (LOGO & TEXTES)
+          VUE 2 : PERSONNALISATION DU TICKET AVEC APERÇU EN DIRECT
       ══════════════════════════════════════════════════════════ */}
       {activeTab === "tickets" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* FORMULAIRE DE MODIFICATION DES TEXTES (7 colonnes) */}
-          <div className="lg:col-span-7 bg-surface border border-subtle p-6 shadow-sm space-y-5">
+          <div className="lg:col-span-7 bg-surface border border-subtle p-6 shadow-sm space-y-4">
             <div className="border-b border-subtle pb-3">
               <h3 className="text-sm font-bold uppercase tracking-widest text-brand flex items-center gap-2">
                 <Sparkles size={16} /> Contenu &amp; Marque du Ticket
               </h3>
-              <p className="text-[10px] text-t-muted font-bold mt-1">
-                Tous les textes modifiés ici seront immédiatement appliqués sur
-                les tickets thermiques.
-              </p>
             </div>
 
-            {/* 1. LOGO DU TICKET */}
+            <ImageUpload
+              label="Logo du Salon (Optionnel)"
+              value={ticketSettings.receipt_logo}
+              onChange={(base64) =>
+                setTicketSettings({ ...ticketSettings, receipt_logo: base64 })
+              }
+            />
+
+            <Input
+              label="Nom du Salon (Laisser vide si déjà inclus dans le logo)"
+              value={ticketSettings.receipt_header_title}
+              onChange={(e) =>
+                setTicketSettings({
+                  ...ticketSettings,
+                  receipt_header_title: e.target.value,
+                })
+              }
+              placeholder="Ex: SALON VSP"
+            />
+            <Input
+              label="Sous-titre / Slogan"
+              value={ticketSettings.receipt_header_subtitle}
+              onChange={(e) =>
+                setTicketSettings({
+                  ...ticketSettings,
+                  receipt_header_subtitle: e.target.value,
+                })
+              }
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Numéro de Téléphone"
+                value={ticketSettings.receipt_phone}
+                onChange={(e) =>
+                  setTicketSettings({
+                    ...ticketSettings,
+                    receipt_phone: e.target.value,
+                  })
+                }
+              />
+              <Input
+                label="Adresse / Instagram"
+                value={ticketSettings.receipt_address}
+                onChange={(e) =>
+                  setTicketSettings({
+                    ...ticketSettings,
+                    receipt_address: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <Input
+              label="Message du Ticket d'Attente (Salle)"
+              value={ticketSettings.receipt_queue_message}
+              onChange={(e) =>
+                setTicketSettings({
+                  ...ticketSettings,
+                  receipt_queue_message: e.target.value,
+                })
+              }
+            />
+
             <div>
-              <label className="block text-xs font-bold uppercase text-t-muted mb-2 flex items-center gap-2">
-                <ImageIcon size={14} className="text-brand" /> Logo du Salon
-                (Impression Thermique)
+              <label className="block text-xs font-bold uppercase text-t-muted mb-1">
+                Message de Pied de Page (Facture)
               </label>
-              <ImageUpload
-                label=""
-                value={ticketSettings.receipt_logo}
-                onChange={(base64) =>
-                  setTicketSettings({ ...ticketSettings, receipt_logo: base64 })
-                }
-              />
-              <p className="text-[10px] text-t-muted italic mt-1.5">
-                * Utilisez de préférence un logo contrasté avec fond transparent
-                ou blanc. Il sera converti en noir &amp; blanc net.
-              </p>
-            </div>
-
-            {/* 2. EN-TÊTE DU TICKET */}
-            <div className="space-y-3 pt-3 border-t border-subtle">
-              <Input
-                label="Nom du Salon (Laisser vide si déjà inclus dans le logo)"
-                value={ticketSettings.receipt_header_title}
+              <textarea
+                value={ticketSettings.receipt_footer}
                 onChange={(e) =>
                   setTicketSettings({
                     ...ticketSettings,
-                    receipt_header_title: e.target.value,
+                    receipt_footer: e.target.value,
                   })
                 }
-                placeholder="Optionnel si votre logo contient déjà le nom"
+                rows={2}
+                className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand resize-none"
               />
-              <Input
-                label="Sous-titre / Slogan"
-                value={ticketSettings.receipt_header_subtitle}
-                onChange={(e) =>
-                  setTicketSettings({
-                    ...ticketSettings,
-                    receipt_header_subtitle: e.target.value,
-                  })
-                }
-                placeholder="Ex: Coiffure Masculine & Cafétéria"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Numéro(s) de Téléphone"
-                  value={ticketSettings.receipt_phone}
-                  onChange={(e) =>
-                    setTicketSettings({
-                      ...ticketSettings,
-                      receipt_phone: e.target.value,
-                    })
-                  }
-                  placeholder="Ex: 0550 12 34 56"
-                />
-                <Input
-                  label="Adresse / Instagram"
-                  value={ticketSettings.receipt_address}
-                  onChange={(e) =>
-                    setTicketSettings({
-                      ...ticketSettings,
-                      receipt_address: e.target.value,
-                    })
-                  }
-                  placeholder="Ex: @salon_vsp"
-                />
-              </div>
-            </div>
-
-            {/* 3. MESSAGES DE BAS DE TICKET & ATTENTE */}
-            <div className="space-y-3 pt-3 border-t border-subtle">
-              <Input
-                label="Message du Ticket d'Attente (File)"
-                value={ticketSettings.receipt_queue_message}
-                onChange={(e) =>
-                  setTicketSettings({
-                    ...ticketSettings,
-                    receipt_queue_message: e.target.value,
-                  })
-                }
-                placeholder="Ex: Veuillez patienter, votre tour approche."
-              />
-              <div>
-                <label className="block text-xs font-bold uppercase text-t-muted mb-1">
-                  Message de Pied de Page (Facture Client)
-                </label>
-                <textarea
-                  value={ticketSettings.receipt_footer}
-                  onChange={(e) =>
-                    setTicketSettings({
-                      ...ticketSettings,
-                      receipt_footer: e.target.value,
-                    })
-                  }
-                  rows={2}
-                  className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold focus:outline-none focus:border-brand resize-none"
-                  placeholder="Ex: Merci pour votre visite !"
-                />
-              </div>
             </div>
 
             <Button
@@ -481,168 +727,196 @@ export default function SettingsView() {
             </Button>
           </div>
 
-          {/* SIMULATEUR TICKET PAPIER 80MM AVEC COMMUTATEUR (5 colonnes) */}
+          {/* SIMULATEUR 80MM */}
           <div className="lg:col-span-5 flex flex-col items-center">
-            {/* SÉLECTEUR DE TYPE D'APERÇU */}
             <div className="flex gap-1.5 mb-3 bg-main p-1 border border-subtle">
               <button
                 type="button"
                 onClick={() => setPreviewType("queue")}
-                className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all rounded-none ${
+                className={`px-3 py-1.5 text-[10px] font-bold uppercase transition-all rounded-none ${
                   previewType === "queue"
-                    ? "bg-brand text-white shadow-sm"
+                    ? "bg-brand text-white"
                     : "text-t-muted hover:text-t-main"
                 }`}
               >
-                🎟️ Ticket d'Attente (Entrée)
+                🎟️ Ticket d'Attente
               </button>
               <button
                 type="button"
                 onClick={() => setPreviewType("receipt")}
-                className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all rounded-none ${
+                className={`px-3 py-1.5 text-[10px] font-bold uppercase transition-all rounded-none ${
                   previewType === "receipt"
-                    ? "bg-brand text-white shadow-sm"
+                    ? "bg-brand text-white"
                     : "text-t-muted hover:text-t-main"
                 }`}
               >
-                🧾 Facture Caisse (Sortie)
+                🧾 Facture Caisse
               </button>
             </div>
 
-            {/* LE ROULEAU PAPIER VIRTUEL 80MM */}
             <div className="w-[300px] bg-white text-black p-6 font-mono text-xs shadow-2xl border-t-8 border-slate-700 relative select-none">
-              {/* Effet dentelé bas de ticket */}
-              <div
-                className="absolute -bottom-2 left-0 right-0 h-2 bg-gradient-to-r from-transparent to-transparent bg-repeat-x"
-                style={{ backgroundSize: "10px 10px" }}
-              />
-
-              {/* ── 1. LOGO PARTAGÉ ── */}
-              {ticketSettings.receipt_logo && (
-                <div className="text-center mb-3">
+              {/* Entête */}
+              <div className="text-center space-y-0.5 border-b border-dashed border-gray-400 pb-3 mb-3">
+                {previewType !== "queue" && ticketSettings.receipt_logo && (
                   <img
                     src={ticketSettings.receipt_logo}
-                    alt="Logo Salon"
-                    className="max-h-14 max-w-[130px] mx-auto object-contain filter grayscale contrast-150"
+                    alt="Logo"
+                    className="max-h-12 mx-auto mb-2 filter grayscale contrast-150"
                   />
-                </div>
-              )}
-
-              {/* ── 2. EN-TÊTE PARTAGÉ (NOM, SLOGAN, CONTACT) ── */}
-              <div className="text-center space-y-0.5 border-b border-dashed border-gray-400 pb-3 mb-3">
-                {/* N'AFFICHE LE NOM QUE S'IL N'EST PAS VIDE */}
-                {ticketSettings.receipt_header_title &&
-                  ticketSettings.receipt_header_title.trim() !== "" && (
-                    <h4 className="font-black text-base uppercase tracking-tight">
-                      {ticketSettings.receipt_header_title}
-                    </h4>
-                  )}
-                {ticketSettings.receipt_header_subtitle && (
-                  <p className="text-[10px] font-bold text-gray-700">
-                    {ticketSettings.receipt_header_subtitle}
-                  </p>
                 )}
-                {ticketSettings.receipt_phone && (
-                  <p className="text-[10px]">
-                    Tél : {ticketSettings.receipt_phone}
-                  </p>
+                {ticketSettings.receipt_header_title?.trim() && (
+                  <h4 className="font-black text-base uppercase">
+                    {ticketSettings.receipt_header_title}
+                  </h4>
                 )}
-                {ticketSettings.receipt_address && (
-                  <p className="text-[9px] text-gray-600 italic">
-                    {ticketSettings.receipt_address}
-                  </p>
+                {previewType !== "queue" && (
+                  <>
+                    <p className="text-[10px] font-bold text-gray-700">
+                      {ticketSettings.receipt_header_subtitle}
+                    </p>
+                    {ticketSettings.receipt_phone && (
+                      <p className="text-[10px]">
+                        Tél : {ticketSettings.receipt_phone}
+                      </p>
+                    )}
+                    {ticketSettings.receipt_address && (
+                      <p className="text-[9px] text-gray-600 italic">
+                        {ticketSettings.receipt_address}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* ── 3. CORPS DYNAMIQUE DU TICKET SELON LE BOUTON CHOISI ── */}
-
-              {/* CAS A : APERÇU DU TICKET D'ATTENTE (SALLE D'ATTENTE) */}
               {previewType === "queue" ? (
                 <div className="text-center py-2 space-y-2">
-                  <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
-                    Votre Numéro
+                  <p className="text-[10px] uppercase font-bold text-gray-500">
+                    Votre Numéro de Passage
                   </p>
-                  <p className="text-5xl font-black tracking-tight text-black my-1">
-                    #12
-                  </p>
-
-                  <div className="border-2 border-black px-3 py-1 inline-block mx-auto">
-                    <span className="font-black text-xs uppercase tracking-wider">
-                      POSTE 06
-                    </span>
+                  <p className="text-5xl font-black text-black my-1">#12</p>
+                  <div className="border-2 border-black px-3 py-1 inline-block mx-auto font-black text-xs uppercase">
+                    POSTE 06
                   </div>
-
-                  {/* Message d'attente modifiable en direct */}
-                  <p className="text-[10px] text-gray-700 italic pt-1">
-                    "{ticketSettings.receipt_queue_message}"
-                  </p>
-
                   <div className="border-t border-dashed border-gray-400 pt-2 text-[9px] text-left space-y-0.5 mt-3 text-gray-600">
-                    <div className="flex justify-between">
-                      <span>Client :</span>
-                      <span className="font-bold text-black">Karim B.</span>
-                    </div>
                     <div className="flex justify-between">
                       <span>Coiffeur :</span>
                       <span className="font-bold text-black">AISSA</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Arrivée :</span>
-                      <span>Aujourd'hui à 14:30</span>
+                      <span>Client :</span>
+                      <span className="font-bold text-black">Karim B.</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Heure :</span>
+                      <span>14:30</span>
                     </div>
                   </div>
+                  <p className="text-[9px] text-gray-700 italic pt-1">
+                    "{ticketSettings.receipt_queue_message}"
+                  </p>
                 </div>
               ) : (
-                /* CAS B : APERÇU DE LA FACTURE D'ENCAISSEMENT */
                 <div>
                   <div className="text-center font-bold text-[10px] py-1 border-b border-dashed border-gray-300">
                     *** FACTURE D'ENCAISSEMENT ***
                   </div>
-
                   <div className="text-[10px] space-y-0.5 my-2">
                     <div className="flex justify-between">
-                      <span>1x Dégradé + Barbe</span>
+                      <span>1x Dégradé</span>
                       <span className="font-bold">1 000.00</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>1x Café Expresso</span>
-                      <span className="font-bold">150.00</span>
-                    </div>
                   </div>
-
                   <div className="border-t border-black pt-2 mt-2 font-black text-sm flex justify-between">
                     <span>TOTAL DZD :</span>
-                    <span>1 150.00</span>
+                    <span>1 000.00</span>
+                  </div>
+                  <div className="text-center text-[10px] font-bold border-t border-dashed border-gray-400 mt-4 pt-3 whitespace-pre-line text-gray-800">
+                    {ticketSettings.receipt_footer}
                   </div>
                 </div>
               )}
-
-              {/* ── 4. PIED DE PAGE EN DIRECT ── */}
-              <div className="text-center text-[10px] font-bold border-t border-dashed border-gray-400 mt-4 pt-3 whitespace-pre-line text-gray-800">
-                {ticketSettings.receipt_footer}
-              </div>
             </div>
-
-            <p className="text-[10px] text-t-muted italic text-center mt-3 max-w-[280px]">
-              Basculez entre les deux aperçus pour vérifier la mise en page de
-              l'entrée et de la sortie.
-            </p>
           </div>
         </div>
       )}
 
-      {/* Ticket test thermique */}
+      {/* ── MODAL : CONFIRMATION RÉINITIALISATION BASE DE DONNÉES ── */}
+      <Modal
+        isOpen={isResetModalOpen}
+        onClose={() => !isResetting && setIsResetModalOpen(false)}
+      >
+        <form
+          onSubmit={handleConfirmResetDb}
+          className="p-8 bg-slate-950 border-t-4 border-red-600"
+        >
+          <div className="flex items-center gap-3 text-red-500 mb-4 justify-center">
+            <AlertTriangle size={28} />
+            <h3 className="text-xl font-bold uppercase tracking-widest">
+              Zone de Danger Absolue
+            </h3>
+          </div>
+
+          <p className="text-xs text-slate-300 text-center mb-6 leading-relaxed">
+            Vous êtes sur le point d'
+            <strong>effacer l'intégralité des données</strong> du salon
+            (tickets, clients, argent en caisse, historique). Pour confirmer,
+            tapez le mot de passe de sécurité :
+          </p>
+
+          <div className="bg-main border border-slate-800 p-3 text-center mb-5">
+            <code className="text-sm font-mono font-bold text-red-400 select-all">
+              salonvspdelete
+            </code>
+          </div>
+
+          <div className="space-y-4">
+            <Input
+              label="Mot de passe de confirmation *"
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Tapez salonvspdelete"
+              required
+              autoFocus
+            />
+
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-800">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                disabled={isResetting}
+                className="py-3 text-xs font-bold"
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="danger"
+                type="submit"
+                disabled={isResetting || deletePassword !== "salonvspdelete"}
+                className="py-3 text-xs font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-30"
+              >
+                {isResetting
+                  ? "Suppression en cours..."
+                  : "Confirmer l'Effacement"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Moteur d'impression test */}
       <ThermalReceipt
         type="receipt"
         data={{
-          ticketId: "TEST-TICKET",
-          clientName: "Client Test",
-          barber: "Démonstration",
-          service: "Coupe Test Imprimante",
-          haircutPrice: 500,
+          ticketId: "TEST-01",
+          clientName: "Test Impression",
+          barber: "Technicien",
+          service: "Test Imprimante Thermique",
+          haircutPrice: 0,
           items: [],
-          grandTotal: 500,
-          paidAmount: 500,
+          grandTotal: 0,
+          paidAmount: 0,
         }}
         printTrigger={testPrintTrigger}
       />

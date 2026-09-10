@@ -1,4 +1,5 @@
 import React from "react";
+import { useEffect } from "react";
 import {
   DollarSign,
   Coffee,
@@ -15,6 +16,7 @@ import Button from "../../common/Button";
 import POSMenuGrid from "../../../features/cafe-pos/POSMenuGrid";
 import VirtualNumpad from "../../../features/cafe-pos/VirtualNumpad";
 
+import api from "../../../utils/api";
 export default function CheckoutModal({
   isOpen,
   onClose,
@@ -77,6 +79,18 @@ export default function CheckoutModal({
   handleNumpadSubmit,
 }) {
   if (!isOpen || !ticketToPay) return null;
+
+  useEffect(() => {
+    if (isOpen && calculatedGrandTotal !== undefined) {
+      // Affiche le montant dès que la modale s'ouvre ou que le prix change
+      api
+        .post("/settings/customer-display", { amount: calculatedGrandTotal })
+        .catch(() => {});
+    } else if (!isOpen) {
+      // Remet l'écran à 0.00 dès que la modale se ferme ou que le paiement est fini
+      api.post("/settings/customer-display", { amount: 0 }).catch(() => {});
+    }
+  }, [isOpen, calculatedGrandTotal]);
 
   return (
     <>

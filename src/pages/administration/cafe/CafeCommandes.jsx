@@ -286,6 +286,24 @@ export default function CafeCommandes() {
     }
   };
 
+  useEffect(() => {
+    const subTotal = cart.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
+    let discountAmount = 0;
+    if (discountType === "percent")
+      discountAmount = subTotal * (discountValue / 100);
+    else if (discountType === "amount") discountAmount = discountValue;
+
+    const finalTotal =
+      cart.length > 0 ? Math.max(0, subTotal - discountAmount) : 0;
+
+    api
+      .post("/settings/customer-display", { amount: finalTotal })
+      .catch(() => {});
+  }, [cart, discountType, discountValue]);
+
   if (isLoading) {
     /* ... Loading UI ... */ return (
       <div className="flex h-[calc(100vh-5rem)] -m-8 items-center justify-center bg-main text-brand">

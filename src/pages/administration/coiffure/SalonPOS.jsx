@@ -240,7 +240,15 @@ export default function SalonPOS() {
     }
     setIsNumpadOpen(false);
   };
-
+  // ── AFFICHEUR CLIENT ARRIÈRE (CAISSE RAPIDE SALON) ──
+  useEffect(() => {
+    // Si le panier contient des articles ou un pourboire, on affiche le total, sinon 0.00
+    const totalToDisplay =
+      cart.length > 0 || tipAmount > 0 ? finalTotal + tipAmount : 0;
+    api
+      .post("/settings/customer-display", { amount: totalToDisplay })
+      .catch(() => {});
+  }, [cart, finalTotal, tipAmount]);
   if (isLoading) {
     return (
       <div className="flex h-[calc(100vh-5rem)] -m-8 items-center justify-center bg-main text-brand">
