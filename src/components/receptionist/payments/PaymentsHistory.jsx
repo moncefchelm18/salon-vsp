@@ -121,92 +121,109 @@ export default function PaymentsHistory({
 
       <DataTable
         headers={[
-          { label: "N° Ticket" },
+          { label: "N° Passage" },
+          { label: "N° Facture" },
           { label: "Heure" },
           { label: "Client" },
           { label: "Coiffeur" },
           { label: "Prestation" },
           { label: "Pourboire", align: "right" },
-          { label: "Montant Net", align: "right" },
+          { label: "Net (Salon)", align: "right" }, // Précision "Salon"
           { label: "Actions", align: "right" },
         ]}
       >
         {completedPaymentsHistory.length > 0 ? (
-          completedPaymentsHistory.map((payment) => (
-            <tr
-              key={payment.id}
-              className="border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors group"
-            >
-              <td className="py-4 px-5 text-amber-500 font-mono font-bold text-sm uppercase">
-                #{payment.queueNumber || payment.id}
-              </td>
+          completedPaymentsHistory.map((payment) => {
+            let cafeTotal = 0;
+            payment.cafeOrders?.forEach((o) => (cafeTotal += o.totalPrice));
 
-              <td className="py-4 px-5 text-slate-400 font-mono text-[10px]">
-                {new Date(payment.createdAt).toLocaleTimeString("fr-FR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </td>
+            // Le Net Salon = Le prix total payé - le total du café
+            const salonNetPrice = payment.price;
+            const originalHaircut = payment.originalPrice ?? payment.price;
+            const discount = payment.discountAmount || 0;
 
-              <td className="py-4 px-5 text-slate-200 font-bold text-xs uppercase tracking-wide">
-                {payment.clientName}
-              </td>
-              <td className="py-4 px-5 text-slate-400 font-bold text-[9px] uppercase tracking-widest">
-                {payment.barber}
-              </td>
-              <td className="py-4 px-5 text-slate-400 italic text-xs">
-                {payment.service || "—"}
-              </td>
-              <td className="py-4 px-5 text-right font-mono font-bold text-[10px]">
-                {payment.tip > 0 ? (
-                  <span className="text-green-400">
-                    + DZD {payment.tip.toFixed(2)}
-                  </span>
-                ) : (
-                  <span className="text-slate-700">—</span>
-                )}
-              </td>
-
-              <td className="py-4 px-5 text-right">
-                {payment.discountAmount > 0 ? (
-                  <div className="flex flex-col items-end leading-tight">
-                    <span className="text-slate-500 line-through text-[9px] font-mono">
-                      DZD {payment.originalPrice?.toFixed(2)}
+            return (
+              <tr
+                key={payment.id}
+                className="border-b border-slate-800/80 hover:bg-slate-800/40 transition-colors group"
+              >
+                <td className="py-4 px-5 text-amber-500 font-mono font-bold text-sm uppercase">
+                  #{payment.queueNumber || payment.id}
+                </td>
+                <td className="py-4 px-5 text-slate-500 font-mono font-bold text-[10px]">
+                  F-{payment.id}
+                </td>
+                <td className="py-4 px-5 text-slate-400 font-mono text-[10px]">
+                  {new Date(payment.createdAt).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </td>
+                <td className="py-4 px-5 text-slate-200 font-bold text-xs uppercase tracking-wide">
+                  {payment.clientName}
+                </td>
+                <td className="py-4 px-5 text-slate-400 font-bold text-[9px] uppercase tracking-widest">
+                  {payment.barber}
+                </td>
+                <td className="py-4 px-5 text-slate-400 italic text-xs">
+                  {payment.service || "—"}
+                  {/* Indicateur discret s'il y a du café */}
+                  {cafeTotal > 0 && (
+                    <span className="block text-[9px] text-amber-500/70 not-italic font-bold mt-0.5">
+                      + Consos Café liées
                     </span>
+                  )}
+                </td>
+
+                <td className="py-4 px-5 text-right font-mono font-bold text-[10px]">
+                  {payment.tip > 0 ? (
+                    <span className="text-green-400">
+                      + DZD {payment.tip.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-slate-700">—</span>
+                  )}
+                </td>
+
+                <td className="py-4 px-5 text-right">
+                  {discount > 0 ? (
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-slate-500 line-through text-[9px] font-mono">
+                        DZD {originalHaircut.toFixed(2)}
+                      </span>
+                      <span className="font-mono font-bold text-amber-400 text-sm">
+                        DZD {salonNetPrice.toFixed(2)}
+                      </span>
+                      <span className="text-red-400 text-[9px] font-bold">
+                        (- DZD {discount.toFixed(2)})
+                      </span>
+                    </div>
+                  ) : (
                     <span className="font-mono font-bold text-amber-400 text-sm">
-                      DZD {(payment.price || 0).toFixed(2)}
+                      DZD {salonNetPrice.toFixed(2)}
                     </span>
-                    <span className="text-red-400 text-[9px] font-bold">
-                      (- DZD {payment.discountAmount.toFixed(2)})
-                    </span>
-                  </div>
-                ) : (
-                  <span className="font-mono font-bold text-amber-400 text-sm">
-                    DZD {(payment.price || 0).toFixed(2)}
-                  </span>
-                )}
-              </td>
+                  )}
+                </td>
 
-              <td className="py-4 px-5 text-right">
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    onClick={() => onViewTicket(payment)}
-                    title="Voir les détails"
-                    className="p-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white active:scale-95 transition-all"
-                  >
-                    <Eye size={14} />
-                  </button>
-                  <button
-                    onClick={() => onOpenPostTip(payment)}
-                    title="Ajouter un pourboire"
-                    className="p-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white active:scale-95 transition-all"
-                  >
-                    <Gift size={14} />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))
+                <td className="py-4 px-5 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => onViewTicket(payment)}
+                      className="p-2 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all"
+                    >
+                      <Eye size={14} />
+                    </button>
+                    <button
+                      onClick={() => onOpenPostTip(payment)}
+                      className="p-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white transition-all"
+                    >
+                      <Gift size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })
         ) : (
           <tr>
             <td colSpan="8" className="py-16 bg-slate-950/30 text-center">

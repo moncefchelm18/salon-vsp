@@ -19,7 +19,7 @@ import SettingsView from "../components/receptionist/SettingsView";
 import ArdoiseManager from "../components/receptionist/ArdoiseManager";
 import CaisseManager from "../components/receptionist/CaisseManager";
 import SalonPOS from "../pages/administration/coiffure/SalonPOS";
-import SalonStock from "../pages/administration/coiffure/SalonStock"; // <-- IMPORT
+import SalonStock from "../pages/administration/coiffure/SalonStock";
 
 // (CAFE) PAGES
 import CafeCommandes from "../pages/administration/cafe/CafeCommandes";
@@ -32,6 +32,8 @@ import CafeDashboard from "../pages/administration/cafe/CafeDashboard";
 import CafeSettings from "../pages/administration/cafe/CafeSettings";
 import ExpensesManager from "../components/receptionist/ExpensesManager";
 import CEODashboard from "../pages/administration/CEODashboard";
+import ActiviteView from "../pages/administration/ActiviteView";
+import StatistiquesView from "../pages/administration/StatistiquesView";
 
 // IPAD / TABLET PAGES
 import BarberTabletView from "../pages/coiffeur/BarberTabletView";
@@ -39,27 +41,22 @@ import BarberTabletView from "../pages/coiffeur/BarberTabletView";
 // SECURITY WRAPPER (Route Guard)
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
-
   if (loading) return null;
-
   if (!user) return <Navigate to="/login" replace />;
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Redirections automatiques intelligentes selon les rôles
     if (user.role === "barber_global")
       return <Navigate to="/coiffeur" replace />;
     if (user.role === "barber")
       return <Navigate to={`/coiffeur/salle/${user.barberId}`} replace />;
     return <Navigate to="/administration/coiffure/dashboard" replace />;
   }
-
   return children;
 };
 
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* PUBLIC ROUTES */}
       <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
 
@@ -79,13 +76,22 @@ export default function AppRoutes() {
         <Route path="paiements" element={<PaymentsManager />} />
         <Route path="ardoise" element={<ArdoiseManager />} />
         <Route path="caisse" element={<CaisseManager />} />
-        <Route path="stock" element={<SalonStock />} />{" "}
-        {/* <-- NOUVELLE ROUTE */}
+        <Route path="charges" element={<ExpensesManager />} />
+
+        {/* Gestion Salon */}
         <Route
           path="menu"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <SalonManager />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="stock"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "receptionist"]}>
+              <SalonStock />
             </ProtectedRoute>
           }
         />
@@ -105,19 +111,13 @@ export default function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        {/* Finances & Bilan */}
         <Route
-          path="utilisateurs"
+          path="activite"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
-              <StaffManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="charges"
-          element={
-            <ProtectedRoute allowedRoles={["admin"]}>
-              <ExpensesManager />
+              <ActiviteView />
             </ProtectedRoute>
           }
         />
@@ -130,10 +130,28 @@ export default function AppRoutes() {
           }
         />
         <Route
-          path="ceo-dashboard"
+          path="statistiques"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <StatistiquesView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="bilan"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <CEODashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Administration */}
+        <Route
+          path="utilisateurs"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <StaffManager />
             </ProtectedRoute>
           }
         />
@@ -147,8 +165,7 @@ export default function AppRoutes() {
         />
       </Route>
 
-      {/* 2. COIFFEUR (TERMINAL TABLETTE & WORKSPACE PERSONNEL) */}
-      {/* Route de sélection globale (iPad) */}
+      {/* 2. COIFFEUR (TABLETTE) */}
       <Route
         path="/coiffeur"
         element={
@@ -157,8 +174,6 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
-
-      {/* Route de l'espace de travail d'un coiffeur spécifique */}
       <Route
         path="/coiffeur/salle/:id"
         element={
@@ -181,6 +196,9 @@ export default function AppRoutes() {
         <Route path="dashboard" element={<CafeDashboard />} />
         <Route path="commandes" element={<CafeCommandes />} />
         <Route path="caisse" element={<CaisseManager />} />
+        <Route path="charges" element={<ExpensesManager />} />
+
+        {/* Stocks & Articles */}
         <Route
           path="produits"
           element={
@@ -213,11 +231,13 @@ export default function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        {/* Finances & Bilan */}
         <Route
-          path="charges"
+          path="activite"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
-              <ExpensesManager />
+              <ActiviteView />
             </ProtectedRoute>
           }
         />
@@ -230,28 +250,33 @@ export default function AppRoutes() {
           }
         />
         <Route
-          path="ceo-dashboard"
+          path="statistiques"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <StatistiquesView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="bilan"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <CEODashboard />
             </ProtectedRoute>
           }
         />
+
+        {/* Administration */}
         <Route
           path="parametres"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
-              <CafeSettings />
+              <SettingsView />
             </ProtectedRoute>
           }
         />
       </Route>
 
-      {/* FALLBACK REDIRECTS */}
-      <Route
-        path="/"
-        element={<Navigate to="/administration/coiffure/dashboard" replace />}
-      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

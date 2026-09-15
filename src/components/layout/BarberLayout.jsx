@@ -4,7 +4,7 @@ import { LogOut, Lock, RefreshCcw } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../utils/api";
 import BarberQueue from "../barber/BarberQueue";
-import logo from "../../assets/images/logo-transparent.png";
+import logo from "../../assets/images/logo_no_bg.png";
 
 export default function BarberLayout() {
   const { id } = useParams();

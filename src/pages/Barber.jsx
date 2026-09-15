@@ -9,7 +9,7 @@ import Button from "../components/common/Button";
 import Modal from "../components/common/Modal";
 import Input from "../components/common/Input";
 import BarberQueue from "../components/barber/BarberQueue";
-import logo from "../assets/images/logo-transparent.png"; // Adjust path if needed
+import logo from "../assets/images/logo_no_bg.png"; // Adjust path if needed
 
 export default function BarberTabletView() {
   const { logout } = useAuth();
@@ -155,7 +155,7 @@ export default function BarberTabletView() {
                 <img
                   src={
                     b.image ||
-                    `https://ui-avatars.com/api/?name=${b.name}&background=D4AF37&color=1E1E1E&rounded=false&size=150&bold=true`
+                    `https://ui-avatars.com/api/?name=${b.name}&background=779e45&color=1E1E1E&rounded=false&size=150&bold=true`
                   }
                   alt={b.name}
                   className="w-24 h-24 mb-4 object-cover border-4 border-slate-800 group-hover:border-amber-500/50 transition-colors"

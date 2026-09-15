@@ -14,7 +14,7 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
-import logo from "../assets/images/logo-transparent.png";
+import logo from "../assets/images/logo_no_bg.png";
 
 export default function ReceptionistLayout() {
   const location = useLocation();

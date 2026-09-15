@@ -28,10 +28,15 @@ export default function ReceptionistDashboard() {
 
   // New Analytics State specifically for the Dashboard
   const [dailyStats, setDailyStats] = useState({
-    summary: { totalRevenue: 0, totalServicesSold: 0 },
-    charts: { serviceDistributionData: [] },
+    summary: {
+      totalRevenue: 0,
+      totalServicesSold: 0,
+      avgTransaction: 0,
+      lostClientsCount: 0,
+      potentialLossAmount: 0,
+    },
+    charts: { serviceDistributionData: [], barberRevenueData: [] },
   });
-
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -77,7 +82,7 @@ export default function ReceptionistDashboard() {
   }, []);
 
   // --- 2. DERIVED STATS & LOGIC ---
-  const totalRevenueToday = dailyStats.summary.totalRevenue;
+  const totalRevenueToday = dailyStats?.summary?.totalRevenue || 0;
   const pendingPaymentsCount = liveTickets.filter(
     (t) => t.status === "ready-to-pay",
   ).length;
@@ -85,12 +90,11 @@ export default function ReceptionistDashboard() {
     ["waiting", "in-progress"].includes(t.status),
   ).length;
 
-  // Daily Goal Logic (Example Goal: DZD1000/day)
+  const DAILY_GOAL = dailyGoal || 30000;
   const goalPercentage =
-    dailyGoal > 0 ? Math.min((totalRevenueToday / dailyGoal) * 100, 100) : 0;
+    DAILY_GOAL > 0 ? Math.min((totalRevenueToday / DAILY_GOAL) * 100, 100) : 0;
 
-  // Top 3 Services today
-  const topServices = [...dailyStats.charts.serviceDistributionData]
+  const topServices = [...(dailyStats?.charts?.serviceDistributionData || [])]
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 3);
 
@@ -156,7 +160,7 @@ export default function ReceptionistDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           label="Recette du Jour"
-          value={`DZD ${totalRevenueToday.toFixed(2)}`}
+          value={`DZD ${(totalRevenueToday || 0).toFixed(2)}`} // <-- SÉCURISÉ ICI
           icon={DollarSign}
           colorClass="text-green-500"
           highlight={true}

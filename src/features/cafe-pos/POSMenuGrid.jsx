@@ -59,75 +59,52 @@ export default function POSMenuGrid({
         })}
       </div>
 
-      {/* PRODUCTS GRID */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* PRODUCTS GRID SANS PHOTO (STYLE POS COMPACT) */}
+      <div className="flex-1 overflow-y-auto p-4 bg-main">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
           {activeProducts.map((product) => {
-            // --- LOGIQUE D'ALERTE STOCK ---
-            // On vérifie si c'est un produit physique suivi et s'il est à zéro ou moins
             const isOutOfStock = product.isTracked && product.stock <= 0;
 
             return (
               <button
                 key={product.id}
                 onClick={() => onAddProduct(product)}
-                // Si hors stock, on ajoute un filtre rouge/grisé léger pour alerter l'œil, mais ça reste cliquable !
-                className={`bg-surface border flex flex-col items-center p-4 transition-all active:scale-95 shadow-sm group relative overflow-hidden ${
+                className={`bg-surface border p-3.5 flex flex-col justify-between text-left transition-all active:scale-[0.98] shadow-sm group min-h-[90px] relative overflow-hidden ${
                   isOutOfStock
-                    ? "border-red-500/50 hover:border-red-500 bg-red-500/5"
-                    : "border-subtle hover:border-brand hover:shadow-lg"
+                    ? "border-red-500/50 bg-red-500/5"
+                    : "border-subtle hover:border-brand hover:bg-brand/5"
                 }`}
               >
-                {/* Badge Hors Stock visuel */}
+                {/* Alerte rupture discrète en haut à droite */}
                 {isOutOfStock && (
-                  <div className="absolute top-0 w-full bg-red-600 text-white text-[9px] font-bold uppercase tracking-widest py-1 flex justify-center items-center gap-1 shadow-md z-10">
-                    <AlertTriangle size={10} /> Stock : {product.stock}
+                  <div className="absolute top-0 right-0 bg-red-600 text-white text-[8px] font-bold uppercase px-2 py-0.5 shadow-sm">
+                    Stock: {product.stock}
                   </div>
                 )}
 
-                <div
-                  className={`w-full aspect-square bg-main border mb-4 p-2 flex justify-center items-center transition-colors ${
-                    isOutOfStock
-                      ? "border-red-500/30 opacity-60"
-                      : "border-subtle group-hover:border-brand/50"
-                  }`}
-                >
-                  {product.image ? (
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className={`w-full h-full object-cover transition-opacity ${
-                        isOutOfStock
-                          ? "grayscale opacity-80"
-                          : "opacity-90 group-hover:opacity-100"
-                      }`}
-                    />
-                  ) : (
-                    <span className="text-t-muted font-bold text-xs uppercase opacity-50">
-                      Sans Image
-                    </span>
-                  )}
+                <div>
+                  <span className="text-[9px] font-bold uppercase text-t-muted block mb-1">
+                    {product.category?.name || "Cafétéria"}
+                  </span>
+                  <h3
+                    className={`font-bold text-xs uppercase leading-tight line-clamp-2 ${
+                      isOutOfStock
+                        ? "text-red-400"
+                        : "text-t-main group-hover:text-brand"
+                    }`}
+                  >
+                    {product.name}
+                  </h3>
                 </div>
 
-                <h3
-                  className={`font-bold text-sm text-center leading-tight mb-2 uppercase tracking-wide transition-colors ${
-                    isOutOfStock
-                      ? "text-red-400"
-                      : "text-t-main group-hover:text-brand"
-                  }`}
-                >
-                  {product.name}
-                </h3>
-
-                <p
-                  className={`border w-full text-center py-2 font-mono font-bold text-lg mt-auto ${
-                    isOutOfStock
-                      ? "bg-red-950/20 border-red-500/30 text-red-500"
-                      : "bg-main border-subtle text-brand"
-                  }`}
-                >
-                  {product.price.toFixed(2)} DA
-                </p>
+                <div className="mt-2 pt-2 border-t border-subtle/50 flex justify-between items-end w-full">
+                  <span className="text-brand font-mono font-bold text-base">
+                    {Number(product.price).toFixed(2)} DA
+                  </span>
+                  <span className="text-[8px] font-bold uppercase text-t-muted bg-main px-1.5 py-0.5 border border-subtle">
+                    +
+                  </span>
+                </div>
               </button>
             );
           })}

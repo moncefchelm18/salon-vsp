@@ -7,7 +7,7 @@ import api from "../../utils/api";
 
 import Button from "../../components/common/Button";
 import Modal from "../../components/common/Modal";
-import logo from "../../assets/images/logo-transparent.png";
+import logo from "../../assets/images/logo_no_bg.png";
 
 export default function BarberTabletView() {
   const { logout } = useAuth();
@@ -24,7 +24,9 @@ export default function BarberTabletView() {
     const fetchBarbers = async () => {
       try {
         const res = await api.get("/barbers");
-        setBarbers(res.data);
+        // Filtrer pour que seuls les vrais coiffeurs apparaissent sur la tablette
+        const realBarbers = res.data.filter((b) => b.name !== "Boutique Salon");
+        setBarbers(realBarbers);
       } catch (err) {
         toast.error("Échec de connexion réseau");
       } finally {

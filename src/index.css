@@ -11,13 +11,23 @@
   --color-t-main: var(--theme-t-main);
   --color-t-muted: var(--theme-t-muted);
 
+  /* ── VOTRE NOUVELLE PALETTE VERT OLIVE AVEC TOUTES SES NUANCES ── */
+  --color-olive-300: #b4b582;
+  --color-olive-400: #9b9e5a; /* Titres lumineux */
+  --color-olive-500: #81853a; /* Base - Kaki/Olive chaud */
+  --color-olive-600: #65692a; /* Survol */
+  --color-olive-700: #4b4e1e;
+  --color-olive-800: #333513;
+  --color-olive-900: #1d1e0a;
+  --color-olive-950: #0f1004;
+
   --font-serif: "DM Serif Display", serif;
   --font-sans: "Montserrat", sans-serif;
 }
 
 /* --- THEME 1: DEFAULT SALON (DARK & GOLD) --- */
 :root {
-  --theme-brand: #d4af37;
+  --theme-brand: #9ca149;
   --theme-main: #020617;
   --theme-surface: #0f172a;
   --theme-subtle: #1e293b;
@@ -73,7 +83,7 @@ html.theme-cafe {
   transition: background 0.3s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--theme-brand, #d4af37);
+  background: var(--theme-brand, #779e45);
 }
 
 /* ======================================================================

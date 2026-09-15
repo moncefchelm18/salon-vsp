@@ -48,7 +48,7 @@ export default function Login() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-950 p-4 relative overflow-hidden">
       {/* Cool background abstract styling */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-amber-500/10 blur-[100px] rounded-full pointer-events-none"></div>
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-olive-500/10 blur-[100px] rounded-full pointer-events-none"></div>
 
       {/* Our Component */}
       <LoginForm onSubmit={handleLoginSubmit} isLoading={isLoading} />

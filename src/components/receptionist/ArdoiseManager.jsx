@@ -4,10 +4,12 @@ import {
   UserPlus,
   CreditCard,
   CheckCircle,
-  Search,
   AlertCircle,
   Coins,
   RefreshCcw,
+  Edit,
+  Trash2,
+  Calendar,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -20,14 +22,16 @@ import Input from "../common/Input";
 export default function ArdoiseManager() {
   const [clients, setClients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Create Client Modal
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newClientName, setNewClientName] = useState("");
-  const [newClientPhone, setNewClientPhone] = useState("");
+  // Modale Créer/Éditer
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState("add"); // 'add' ou 'edit'
+  const [clientToEdit, setClientToEdit] = useState(null);
 
-  // Pay Debt Modal
+  const [formData, setFormData] = useState({ name: "", phone: "" });
+
+  // Modale Paiement Ardoise
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
   const [clientToPay, setClientToPay] = useState(null);
   const [payAmount, setPayAmount] = useState("");
@@ -48,22 +52,47 @@ export default function ArdoiseManager() {
     fetchClients();
   }, []);
 
-  const handleCreateClient = async (e) => {
-    e.preventDefault();
-    if (!newClientName) return toast.error("Le nom est obligatoire");
+  const handleOpenModal = (mode, client = null) => {
+    setModalMode(mode);
+    setClientToEdit(client);
+    setFormData({
+      name: client ? client.name : "",
+      phone: client ? client.phone || "" : "",
+    });
+    setIsModalOpen(true);
+  };
 
+  const handleSaveClient = async (e) => {
+    e.preventDefault();
+    if (!formData.name) return toast.error("Le nom est obligatoire");
+
+    setIsSubmitting(true);
     try {
-      await api.post("/clients", {
-        name: newClientName,
-        phone: newClientPhone,
-      });
-      toast.success("Client enregistré !");
-      setIsCreateModalOpen(false);
-      setNewClientName("");
-      setNewClientPhone("");
+      if (modalMode === "add") {
+        await api.post("/clients", formData);
+        toast.success("Client enregistré !");
+      } else {
+        await api.put(`/clients/${clientToEdit.id}`, formData);
+        toast.success("Client mis à jour !");
+      }
+      setIsModalOpen(false);
       fetchClients();
     } catch (err) {
-      toast.error(err.response?.data?.message || "Erreur de création");
+      toast.error(err.response?.data?.message || "Erreur d'enregistrement");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteClient = async (id, name) => {
+    if (!window.confirm(`Supprimer définitivement la fiche de "${name}" ?`))
+      return;
+    try {
+      await api.delete(`/clients/${id}`);
+      toast.success("Client supprimé.");
+      fetchClients();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Erreur de suppression.");
     }
   };
 
@@ -74,6 +103,7 @@ export default function ArdoiseManager() {
     if (amount > clientToPay.debt)
       return toast.error("Le montant dépasse la dette !");
 
+    setIsSubmitting(true);
     try {
       await api.post(`/clients/${clientToPay.id}/pay`, { amount });
       toast.success(
@@ -86,159 +116,189 @@ export default function ArdoiseManager() {
         err.response?.data?.message ||
           "Erreur de paiement. La caisse est-elle ouverte ?",
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  const filteredClients = clients.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.phone && c.phone.includes(searchTerm)),
-  );
 
   const totalDebts = clients.reduce((sum, c) => sum + c.debt, 0);
 
   return (
     <div className="space-y-6">
-      {/* EN-TÊTE : Design coloré et moderne avec bilan des dettes à l'extérieur */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-6 bg-surface border border-subtle shadow-sm">
+      {/* ── EN-TÊTE ── */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 p-6 bg-surface border border-subtle shadow-sm">
         <div>
           <h2 className="text-2xl font-bold text-t-main flex items-center gap-2">
-            <Users className="text-brand" size={24} /> Fichier Clients &
+            <Users className="text-brand" size={24} /> Fichier Clients &amp;
             Ardoises
           </h2>
           <p className="text-t-muted text-sm mt-1">
-            Gérez la liste de vos clients fidèles et le suivi de leurs ardoises.
+            Gérez vos clients fidèles, leur historique de visites et le
+            remboursement de leurs crédits.
           </p>
         </div>
         <div className="flex gap-4 items-center w-full md:w-auto">
-          {/* Badge de Dette Globale mis en valeur */}
           <div className="bg-main border border-red-500/20 px-4 py-2 text-right shadow-inner">
             <p className="text-[10px] uppercase font-bold text-t-muted tracking-widest">
-              Total Dettes Clients Dehors
+              Total Dettes Clients (Dehors)
             </p>
             <p className="text-xl font-mono font-bold text-red-500">
               DZD {totalDebts.toFixed(2)}
             </p>
           </div>
           <Button
-            variant="success" // <-- CHANGÉ EN VERT (Action positive)
-            onClick={() => setIsCreateModalOpen(true)}
-            className="py-3 px-6 text-sm"
+            variant="success"
+            onClick={() => handleOpenModal("add")}
+            className="py-3 px-6 text-sm shadow-md"
           >
-            <UserPlus size={16} /> Enregistrer Client
+            <UserPlus size={16} className="mr-2" /> Nouveau Client
           </Button>
         </div>
       </div>
 
-      {/* TABLEAU DES CLIENTS ET DES CRÉDITS */}
-      <DataTable
-        headers={[
-          { label: "Nom du Client" },
-          { label: "Numéro de Téléphone" },
-          { label: "Fréquence Visites" },
-          { label: "Solde Ardoise (Dette)" },
-          { label: "Actions", align: "right" },
-        ]}
-      >
-        {isLoading ? (
-          <tr>
-            <td
-              colSpan="5"
-              className="py-12 text-center text-brand flex flex-col items-center gap-3"
-            >
-              <RefreshCcw className="animate-spin w-8 h-8" />
-              <span className="font-bold text-lg">
-                Mise à jour du fichier...
-              </span>
-            </td>
-          </tr>
-        ) : filteredClients.length === 0 ? (
-          <tr>
-            <td
-              colSpan="5"
-              className="text-center py-12 text-t-muted font-bold text-lg border border-subtle border-dashed bg-surface"
-            >
-              Aucun client enregistré dans le carnet.
-            </td>
-          </tr>
-        ) : (
-          filteredClients.map((client) => (
-            <tr
-              key={client.id}
-              className="border-b border-subtle hover:bg-brand/5 transition-colors"
-            >
-              <td className="px-6 py-4 font-bold text-t-main uppercase text-xs">
-                {client.name}
-              </td>
-              <td className="px-6 py-4 font-mono font-bold text-t-muted text-xs">
-                {client.phone || "--"}
-              </td>
-              <td className="px-6 py-4 text-sm font-semibold text-t-muted">
-                {client._count?.tickets || 0} visite(s) au salon
-              </td>
-
-              {/* BADGES DE DETTE CRISTALLINS (Vert / Rouge) */}
-              <td className="px-6 py-4">
-                {client.debt > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 font-mono font-bold text-xs shadow-sm">
-                    <AlertCircle size={12} /> DZD {client.debt.toFixed(2)}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 font-bold text-xs shadow-sm">
-                    <CheckCircle size={12} /> Réglé (0.00)
-                  </span>
-                )}
-              </td>
-
-              {/* BOUTON REMBOURSER VERT SOLID */}
-              <td className="px-6 py-4 text-right">
-                {client.debt > 0 && (
-                  <Button
-                    variant="success" // <-- CHANGÉ EN SOLID SUCCESS (Vert franc)
-                    onClick={() => {
-                      setClientToPay(client);
-                      setPayAmount(client.debt.toString());
-                      setIsPayModalOpen(true);
-                    }}
-                    className="py-2 px-4 text-xs font-bold shadow-md shadow-green-500/10"
-                  >
-                    <CreditCard size={14} className="mr-2" /> Rembourser
-                  </Button>
-                )}
+      {/* ── TABLEAU CRM ── */}
+      {isLoading ? (
+        <div className="py-20 text-center animate-pulse text-brand font-bold uppercase tracking-widest text-xs">
+          Synchronisation du carnet clients...
+        </div>
+      ) : (
+        <DataTable
+          headers={[
+            { label: "Nom du Client" },
+            { label: "Contact" },
+            { label: "Inscription" },
+            { label: "Dernière Visite" },
+            { label: "Fréquence" },
+            { label: "Solde Ardoise (Dette)", align: "right" },
+            { label: "Actions", align: "right" },
+          ]}
+        >
+          {clients.length === 0 ? (
+            <tr>
+              <td
+                colSpan="7"
+                className="text-center py-12 text-t-muted font-bold uppercase tracking-widest text-xs border border-subtle border-dashed bg-surface m-4"
+              >
+                Aucun client enregistré.
               </td>
             </tr>
-          ))
-        )}
-      </DataTable>
+          ) : (
+            clients.map((client) => (
+              <tr
+                key={client.id}
+                className="border-b border-subtle hover:bg-brand/5 transition-colors group"
+              >
+                <td className="px-6 py-4 font-bold text-t-main uppercase text-xs">
+                  {client.name}
+                </td>
 
-      {/* MODAL : ENREGISTRER UN NOUVEAU CLIENT */}
+                <td className="px-6 py-4 font-mono font-bold text-t-muted text-[10px]">
+                  {client.phone || "--"}
+                </td>
+
+                <td className="px-6 py-4 text-[10px] text-t-muted uppercase font-bold">
+                  {new Date(client.createdAt).toLocaleDateString("fr-FR")}
+                </td>
+
+                <td className="px-6 py-4 text-[10px] text-t-muted uppercase font-bold">
+                  {client.lastVisit
+                    ? new Date(client.lastVisit).toLocaleDateString("fr-FR")
+                    : "--"}
+                </td>
+
+                <td className="px-6 py-4">
+                  <span className="bg-main border border-subtle px-2 py-1 text-[10px] font-bold text-t-main uppercase">
+                    {client._count?.tickets || 0} coupes
+                  </span>
+                </td>
+
+                {/* BADGE DE DETTE */}
+                <td className="px-6 py-4 text-right">
+                  {client.debt > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 font-mono font-bold text-sm shadow-sm">
+                      DZD {client.debt.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 font-bold text-[10px] uppercase shadow-sm">
+                      <CheckCircle size={10} /> Réglé
+                    </span>
+                  )}
+                </td>
+
+                {/* ACTIONS */}
+                <td className="px-6 py-4 text-right flex justify-end gap-2">
+                  {client.debt > 0 && (
+                    <Button
+                      variant="success"
+                      onClick={() => {
+                        setClientToPay(client);
+                        setPayAmount(client.debt.toString());
+                        setIsPayModalOpen(true);
+                      }}
+                      className="py-1.5 px-3 text-[10px] shadow-md mr-2"
+                      title="Rembourser la dette"
+                    >
+                      <CreditCard size={14} className="mr-1.5" /> Encaisser
+                      Dette
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleOpenModal("edit", client)}
+                    className="p-2 text-xs bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white transition-colors"
+                  >
+                    <Edit size={14} />
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => handleDeleteClient(client.id, client.name)}
+                    className="p-2 text-xs bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </td>
+              </tr>
+            ))
+          )}
+        </DataTable>
+      )}
+
+      {/* ── MODAL : CRÉER / ÉDITER CLIENT ── */}
       <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        isOpen={isModalOpen}
+        onClose={() => !isSubmitting && setIsModalOpen(false)}
       >
-        <form onSubmit={handleCreateClient} className="p-8">
+        <form onSubmit={handleSaveClient} className="p-8 bg-surface">
           <h3 className="text-2xl font-bold text-t-main mb-6 border-b border-subtle pb-4">
-            Créer une Fiche Client
+            {modalMode === "add"
+              ? "Créer une Fiche Client"
+              : "Modifier la Fiche Client"}
           </h3>
           <div className="space-y-4">
             <Input
               label="Nom Complet *"
-              value={newClientName}
-              onChange={(e) => setNewClientName(e.target.value)}
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
               required
               placeholder="Ex: Karim Benhabib"
+              autoFocus
             />
             <Input
               label="Numéro de Téléphone"
-              value={newClientPhone}
-              onChange={(e) => setNewClientPhone(e.target.value)}
+              value={formData.phone}
+              onChange={(e) =>
+                setFormData({ ...formData, phone: e.target.value })
+              }
               placeholder="Ex: 0550 12 34 56"
             />
-            <div className="grid grid-cols-2 gap-4 pt-6 border-t border-subtle">
+            <div className="grid grid-cols-2 gap-4 pt-6 border-t border-subtle mt-4">
               <Button
                 variant="outline"
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsModalOpen(false)}
+                disabled={isSubmitting}
                 className="py-4 font-bold"
               >
                 Annuler
@@ -246,36 +306,46 @@ export default function ArdoiseManager() {
               <Button
                 variant="success"
                 type="submit"
-                className="py-4 font-bold"
+                disabled={isSubmitting}
+                className="py-4 font-bold shadow-md"
               >
-                Enregistrer Client
+                {isSubmitting ? "Enregistrement..." : "Sauvegarder"}
               </Button>
             </div>
           </div>
         </form>
       </Modal>
 
-      {/* MODAL : REMBOURSER L'ARDOISE */}
-      <Modal isOpen={isPayModalOpen} onClose={() => setIsPayModalOpen(false)}>
-        <form onSubmit={handlePayDebt} className="p-8">
-          <h3 className="text-2xl font-bold text-t-main mb-4 border-b border-subtle pb-4">
-            Encaisser un Remboursement d'Ardoise
+      {/* ── MODAL : REMBOURSER L'ARDOISE ── */}
+      <Modal
+        isOpen={isPayModalOpen}
+        onClose={() => !isSubmitting && setIsPayModalOpen(false)}
+      >
+        <form
+          onSubmit={handlePayDebt}
+          className="p-8 bg-surface border-t-4 border-amber-500"
+        >
+          <h3 className="text-xl font-serif font-bold text-t-main mb-4 uppercase tracking-widest text-center">
+            Remboursement de Crédit
           </h3>
+          <p className="text-[10px] text-t-muted text-center uppercase font-bold tracking-widest border-b border-subtle pb-4 mb-6">
+            L'argent entrera immédiatement dans le tiroir-caisse
+          </p>
 
           <div className="bg-main border border-subtle p-4 mb-6 flex justify-between items-center shadow-inner">
             <div className="text-left">
               <p className="text-[10px] uppercase font-bold text-t-muted">
                 Client débiteur
               </p>
-              <p className="font-bold text-t-main uppercase">
+              <p className="font-bold text-t-main uppercase mt-0.5">
                 {clientToPay?.name}
               </p>
             </div>
             <div className="text-right">
               <p className="text-[10px] uppercase font-bold text-red-500">
-                Montant de l'ardoise
+                Dette Enregistrée
               </p>
-              <p className="font-mono font-bold text-xl text-red-500">
+              <p className="font-mono font-bold text-xl text-red-500 mt-0.5">
                 DZD {clientToPay?.debt.toFixed(2)}
               </p>
             </div>
@@ -292,26 +362,24 @@ export default function ArdoiseManager() {
               required
               autoFocus
             />
-            <p className="text-xs text-t-muted italic text-center flex items-center justify-center gap-1.5 bg-main p-2 border border-subtle">
-              <Coins size={14} className="text-brand animate-pulse" />
-              Ce montant sera automatiquement enregistré dans le tiroir-caisse
-              d'aujourd'hui.
-            </p>
-            <div className="grid grid-cols-2 gap-4 pt-6 border-t border-subtle">
+
+            <div className="grid grid-cols-2 gap-4 pt-6 border-t border-subtle mt-4">
               <Button
                 variant="outline"
                 type="button"
                 onClick={() => setIsPayModalOpen(false)}
-                className="py-4 font-bold"
+                disabled={isSubmitting}
+                className="py-4 font-bold text-xs"
               >
                 Annuler
               </Button>
               <Button
                 variant="success"
                 type="submit"
-                className="py-4 font-bold"
+                disabled={isSubmitting}
+                className="py-4 font-bold text-xs shadow-lg shadow-green-500/20"
               >
-                Encaisser & Clôturer la dette
+                {isSubmitting ? "Traitement..." : "Encaisser & Clôturer"}
               </Button>
             </div>
           </div>

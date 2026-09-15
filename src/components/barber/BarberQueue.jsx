@@ -9,7 +9,7 @@ import {
   DollarSign,
   Wallet,
   Banknote,
-  RefreshCcw,
+  Crown,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -23,18 +23,19 @@ import Input from "../common/Input";
 
 export default function BarberQueue({ barberId, barberName }) {
   const [activeTab, setActiveTab] = useState("workspace"); // 'workspace' ou 'stats'
-  const [statsSubTab, setStatsSubTab] = useState("services"); // 'services' ou 'payouts' dans l'onglet stats
+  const [statsSubTab, setStatsSubTab] = useState("services"); // 'services' ou 'payouts'
 
   // --- WORKSPACE STATES ---
   const [tickets, setTickets] = useState([]);
   const [availableServices, setAvailableServices] = useState([]);
-  const [availableProducts, setAvailableProducts] = useState([]);
+  const [postes, setPostes] = useState([]); // <-- AJOUTEZ CECI
+  const [isBarberVip, setIsBarberVip] = useState(false); // <-- AJOUTEZ CECI
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
-  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [serviceSearch, setServiceSearch] = useState("");
 
   // --- STATS STATES ---
   const [statsPeriod, setStatsPeriod] = useState("today");
@@ -55,14 +56,14 @@ export default function BarberQueue({ barberId, barberName }) {
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState("");
 
-  // --- 1. POLLING & CHARGEMENT DE LA FILE D'ATTENTE ---
+  // --- 1. CHARGEMENT DE LA FILE D'ATTENTE & DES PRESTATIONS ---
   const loadWorkspace = async () => {
     if (activeTab !== "workspace") return;
     try {
       const resTickets = await api.get("/tickets/live");
       const myTickets = resTickets.data
         .filter((t) => t.barberId === barberId)
-        .sort((a, b) => a.id - b.id);
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); // Tri chronologique
       setTickets(myTickets);
       setIsLoading(false);
     } catch (err) {
@@ -72,18 +73,33 @@ export default function BarberQueue({ barberId, barberName }) {
 
   useEffect(() => {
     loadWorkspace();
-    Promise.all([api.get("/services"), api.get("/products")]).then(
-      ([srvRes, prdRes]) => {
-        setAvailableServices(srvRes.data);
-        setAvailableProducts(prdRes.data);
-      },
-    );
+
+    // ── CHARGE LES SERVICES, BARBIERS ET POSTES POUR VÉRIFIER LE STATUT VIP ──
+    Promise.all([
+      api.get("/services"),
+      api.get(`/barbers/${barberId}`),
+      api.get("/postes"),
+    ]).then(([srvRes, barberRes, postesRes]) => {
+      setAvailableServices(srvRes.data);
+      setPostes(postesRes.data);
+
+      const currentBarber = barberRes.data;
+      if (currentBarber && currentBarber.poste) {
+        // Le coiffeur a-t-il un poste VIP ?
+        const myPoste = postesRes.data.find(
+          (p) => p.number === currentBarber.poste,
+        );
+        setIsBarberVip(myPoste ? myPoste.isVip : false);
+      } else {
+        setIsBarberVip(false);
+      }
+    });
 
     const interval = setInterval(loadWorkspace, 5000);
     return () => clearInterval(interval);
   }, [barberId, activeTab]);
 
-  // --- 2. CHARGEMENT DES STATS ET DU SOLDE WALLET ---
+  // --- 2. STATS & SOLDE DU COIFFEUR ---
   const fetchMyStats = async () => {
     setIsStatsLoading(true);
     try {
@@ -109,6 +125,21 @@ export default function BarberQueue({ barberId, barberName }) {
   const currentTicket = tickets.find((t) => t.status === "in-progress");
   const pendingTickets = tickets.filter((t) => t.status === "waiting");
 
+  // ── CALCUL DYNAMIQUE DU TAUX COIFFEUR VS PROPRIÉTAIRE ──
+  const isOwner = Boolean(balanceData.isOwner);
+  // Si c'est le propriétaire, sa commission est forcée à 0% (100% au Salon)
+  const myCommissionRate = isOwner
+    ? 0
+    : balanceData.commissionRate !== undefined
+      ? balanceData.commissionRate
+      : 50;
+  const effectiveRate = myCommissionRate / 100;
+
+  // Calcul du gain de la période (Revenu * Taux + Pourboires)
+  const myPeriodRevenue = Number(statsData.summary.totalRevenue || 0);
+  const myPeriodTips = Number(statsData.summary.totalTips || 0);
+  const myPeriodGain = myPeriodRevenue * effectiveRate + myPeriodTips;
+
   // --- 3. ACTIONS DU FAUTEUIL ---
   const handleStartService = async (ticketId) => {
     try {
@@ -120,7 +151,7 @@ export default function BarberQueue({ barberId, barberName }) {
   };
 
   const handleClientNoShow = async (ticketId, clientName) => {
-    if (window.confirm(`Retirer ${clientName} de la liste ? (Absent)`)) {
+    if (window.confirm(`Retirer ${clientName} de la liste ? (Client absent)`)) {
       try {
         await api.delete(`/tickets/${ticketId}`);
         toast.success(`Client ${clientName} retiré.`);
@@ -144,32 +175,25 @@ export default function BarberQueue({ barberId, barberName }) {
   const openCompletionModal = (ticketId) => {
     setSelectedTicketId(ticketId);
     setSelectedService(null);
-    setSelectedProducts([]);
+    setServiceSearch("");
     setShowServiceModal(true);
   };
 
-  const handleToggleProduct = (product) => {
-    setSelectedProducts((prev) =>
-      prev.find((p) => p.id === product.id)
-        ? prev.filter((p) => p.id !== product.id)
-        : [...prev, product],
-    );
-  };
-
+  // ── FINALISER LA COUPE (AVEC MAJORATION AUTOMATIQUE +50% SI RDV) ──
   const handleCompleteService = async () => {
-    if (!selectedTicketId || !selectedService)
-      return toast.error("Veuillez sélectionner une prestation.");
+    if (!selectedTicketId || !selectedService) {
+      return toast.error("Veuillez sélectionner la prestation réalisée.");
+    }
+
     setIsProcessing(true);
     try {
       let finalName = selectedService.name;
       let finalPrice = Number(selectedService.price);
-      if (selectedProducts.length > 0) {
-        const prodNames = selectedProducts.map((p) => p.name).join(", ");
-        finalName = `${selectedService.name} + (${prodNames})`;
-        finalPrice += selectedProducts.reduce(
-          (sum, p) => sum + Number(p.salePrice),
-          0,
-        );
+
+      // MAGIE : Si le ticket actuel est une réservation, on applique +50% !
+      if (currentTicket && currentTicket.isReservation) {
+        finalPrice = finalPrice * 1.5; // +50%
+        finalName = `${selectedService.name} (Tarif RDV VIP)`; // Mention pour le client sur le reçu
       }
 
       await api.patch(`/tickets/${selectedTicketId}/finish`, {
@@ -178,17 +202,15 @@ export default function BarberQueue({ barberId, barberName }) {
         productCost: selectedService.hasProductDeduction
           ? Number(selectedService.productCost)
           : 0,
-        productIds: selectedProducts.map((p) => p.id),
       });
-      toast.success("Facture transmise à la caisse !");
 
+      toast.success("Facture transmise à la caisse !");
       setShowServiceModal(false);
       setSelectedTicketId(null);
       setSelectedService(null);
-      setSelectedProducts([]);
       loadWorkspace();
     } catch (err) {
-      toast.error("Échec de transmission.");
+      toast.error("Échec de transmission de la facture.");
     } finally {
       setIsProcessing(false);
     }
@@ -210,7 +232,7 @@ export default function BarberQueue({ barberId, barberName }) {
     setIsProcessing(true);
     try {
       await api.post(`/barbers/${barberId}/payout-request`, { amount });
-      toast.success(`Demande de ${amount} DZD transmise à la caisse !`);
+      toast.success(`Demande de ${amount} DZD transmise à la réception !`);
       setIsPayoutModalOpen(false);
       setPayoutAmount("");
       fetchMyStats();
@@ -231,49 +253,44 @@ export default function BarberQueue({ barberId, barberName }) {
 
   return (
     <div className="space-y-4 max-w-full overflow-hidden">
-      {/* ── ONGLETS DU TERMINAL BARBIER (TACTILES) ── */}
-      <div className="flex border-b border-slate-800 bg-slate-900/60 -mt-4 sm:-mt-8 -mx-3 sm:-mx-6 px-2 sm:px-6 mb-4 overflow-x-auto">
+      {/* ── ONGLETS DU TERMINAL BARBIER (PARFAITEMENT DÉGAGÉS DU HEADER) ── */}
+      <div className="flex border-b border-slate-800 bg-slate-900/80 mb-6 mt-1 overflow-x-auto hide-scrollbar">
+        {" "}
         <button
           onClick={() => setActiveTab("workspace")}
-          className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-3 sm:py-3.5 text-[10px] sm:text-xs font-bold tracking-wider uppercase transition-all whitespace-nowrap shrink-0 ${
+          className={`flex items-center gap-2 px-4 sm:px-6 py-3.5 text-xs font-bold tracking-wider uppercase transition-all ${
             activeTab === "workspace"
               ? "border-b-2 border-amber-500 text-amber-500 bg-slate-800/40"
               : "border-b-2 border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
-          <Scissors className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-          <span className="sm:hidden">Fauteuil</span>
-          <span className="hidden sm:inline">Fauteuil &amp; File</span>
+          <Scissors className="w-4 h-4" /> Fauteuil &amp; File
         </button>
         <button
           onClick={() => setActiveTab("stats")}
-          className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-3 sm:py-3.5 text-[10px] sm:text-xs font-bold tracking-wider uppercase transition-all whitespace-nowrap shrink-0 ${
+          className={`flex items-center gap-2 px-4 sm:px-6 py-3.5 text-xs font-bold tracking-wider uppercase transition-all ${
             activeTab === "stats"
               ? "border-b-2 border-amber-500 text-amber-500 bg-slate-800/40"
               : "border-b-2 border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
-          <BarChart2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-          <span className="sm:hidden">Rémunération</span>
-          <span className="hidden sm:inline">
-            Espace Pro &amp; Rémunération
-          </span>
+          <BarChart2 className="w-4 h-4" /> Espace Pro &amp; Rémunération
         </button>
       </div>
 
       {/* ══════════════════════════════════════════════════════════
-          VUE 1 : WORKSPACE (FAUTEUIL ACTIF & SALLE D'ATTENTE)
+          VUE 1 : FAUTEUIL ACTIF & SALLE D'ATTENTE
       ══════════════════════════════════════════════════════════ */}
       {activeTab === "workspace" && (
         <div className="space-y-4">
           {/* FAUTEUIL ACTIF */}
           {currentTicket ? (
             <div className="bg-slate-950 border border-amber-500/50 p-4 sm:p-6 shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1.5 sm:w-2 h-full bg-amber-500"></div>
+              <div className="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>
               <div className="flex items-center gap-2.5 mb-4 pl-3 border-b border-slate-800 pb-3">
-                <UserCircle className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500 animate-pulse shrink-0" />
-                <div className="min-w-0">
-                  <h2 className="text-sm sm:text-lg font-serif font-bold text-amber-400 uppercase tracking-widest truncate">
+                <UserCircle className="w-6 h-6 text-amber-500 animate-pulse" />
+                <div>
+                  <h2 className="text-base sm:text-lg font-serif font-bold text-amber-400 uppercase tracking-widest">
                     Actuellement en Fauteuil
                   </h2>
                   <p className="text-slate-500 text-[9px] uppercase font-bold font-mono">
@@ -283,11 +300,11 @@ export default function BarberQueue({ barberId, barberName }) {
               </div>
 
               <div className="pl-3 flex flex-col md:flex-row justify-between md:items-end gap-4">
-                <div className="min-w-0">
+                <div>
                   <p className="text-[10px] uppercase text-slate-500 tracking-widest font-bold">
                     Nom du Client
                   </p>
-                  <p className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-100 uppercase break-words">
+                  <p className="text-2xl sm:text-3xl font-bold text-slate-100 uppercase">
                     {currentTicket.clientName}
                   </p>
                 </div>
@@ -305,8 +322,7 @@ export default function BarberQueue({ barberId, barberName }) {
                     onClick={() => openCompletionModal(currentTicket.id)}
                     className="py-3.5 px-6 font-bold text-xs tracking-wider w-full sm:w-auto shadow-md"
                   >
-                    <CheckCircle size={16} className="mr-1.5 shrink-0" />{" "}
-                    Valider Coupe
+                    <CheckCircle size={16} className="mr-1.5" /> Valider Coupe
                   </Button>
                 </div>
               </div>
@@ -319,13 +335,13 @@ export default function BarberQueue({ barberId, barberName }) {
 
           {/* LISTE D'ATTENTE DE CE BARBIER */}
           <div className="bg-slate-900 border border-slate-800 p-4 sm:p-6">
-            <h2 className="text-xs sm:text-sm font-serif font-bold text-slate-100 uppercase tracking-widest border-b border-slate-800 pb-3 mb-3">
+            <h2 className="text-sm font-serif font-bold text-slate-100 uppercase tracking-widest border-b border-slate-800 pb-3 mb-3">
               En attente pour vous ({pendingTickets.length})
             </h2>
             {pendingTickets.length === 0 ? (
               <div className="text-center py-12 flex flex-col items-center justify-center opacity-50">
                 <Clock className="w-10 h-10 text-slate-600 mb-2" />
-                <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] px-4">
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
                   Aucun client en attente pour votre fauteuil
                 </p>
               </div>
@@ -336,12 +352,12 @@ export default function BarberQueue({ barberId, barberName }) {
                     key={ticket.id}
                     className="bg-slate-950 border border-slate-800 p-3.5 hover:border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
                   >
-                    <div className="flex gap-3 items-center min-w-0 w-full sm:w-auto">
-                      <div className="w-10 h-10 bg-slate-900 border border-amber-500 text-amber-500 flex justify-center items-center font-mono font-bold text-lg shadow-sm shrink-0">
+                    <div className="flex gap-3 items-center">
+                      <div className="w-10 h-10 bg-slate-900 border border-amber-500 text-amber-500 flex justify-center items-center font-mono font-bold text-lg shadow-sm">
                         {ticket.queueNumber || ticket.id}
                       </div>
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide truncate">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
                           {ticket.clientName}
                         </h3>
                         <p className="text-slate-500 text-[10px] uppercase font-mono">
@@ -357,7 +373,7 @@ export default function BarberQueue({ barberId, barberName }) {
                           handleClientNoShow(ticket.id, ticket.clientName)
                         }
                         disabled={currentTicket != null}
-                        className="text-red-500 hover:text-red-400 text-[10px] py-2 px-3 flex-1 sm:flex-none whitespace-nowrap"
+                        className="text-red-500 hover:text-red-400 text-[10px] py-2 px-3 flex-1 sm:flex-none"
                       >
                         Absent
                       </Button>
@@ -365,14 +381,13 @@ export default function BarberQueue({ barberId, barberName }) {
                         variant="primary"
                         onClick={() => handleStartService(ticket.id)}
                         disabled={currentTicket != null}
-                        className={`text-[10px] py-2 px-4 flex-1 sm:flex-none whitespace-nowrap ${
+                        className={`text-[10px] py-2 px-4 flex-1 sm:flex-none ${
                           currentTicket
                             ? "opacity-30 border-slate-800 text-slate-700"
                             : "text-slate-200"
                         }`}
                       >
-                        <Play size={12} className="mr-1.5 shrink-0" /> Prendre
-                        en charge
+                        <Play size={12} className="mr-1.5" /> Prendre en charge
                       </Button>
                     </div>
                   </div>
@@ -384,21 +399,20 @@ export default function BarberQueue({ barberId, barberName }) {
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          VUE 2 : ESPACE PRO & RÉMUNÉRATION (WALLET & ONGLETS TABLEAUX)
+          VUE 2 : ESPACE PRO & RÉMUNÉRATION (WALLET)
       ══════════════════════════════════════════════════════════ */}
       {activeTab === "stats" && (
         <div className="space-y-4">
-          {/* PÉRIODE & STATS CARDS */}
           <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-slate-900 border border-slate-800 p-4 sm:p-5 gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-lg font-serif font-bold text-slate-100 uppercase tracking-widest truncate">
+            <div>
+              <h2 className="text-base sm:text-lg font-serif font-bold text-slate-100 uppercase tracking-widest">
                 Mon Activité &amp; Gains
               </h2>
               <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mt-0.5">
-                Suivi de vos commissions et retraits d'espèces
+                Suivi de vos commissions et retraits
               </p>
             </div>
-            <div className="grid grid-cols-4 sm:flex bg-slate-950 p-1 border border-slate-800 w-full sm:w-auto gap-1 sm:gap-0">
+            <div className="flex bg-slate-950 p-1 border border-slate-800 w-full sm:w-auto">
               {["Today", "Week", "Month", "Year"].map((period) => (
                 <Button
                   key={period}
@@ -406,7 +420,7 @@ export default function BarberQueue({ barberId, barberName }) {
                     statsPeriod === period.toLowerCase() ? "primary" : "ghost"
                   }
                   onClick={() => setStatsPeriod(period.toLowerCase())}
-                  className="px-2 sm:px-3 py-1.5 text-[9px] sm:text-[10px] tracking-wider font-bold whitespace-nowrap"
+                  className="flex-1 sm:flex-none px-3 py-1.5 text-[10px] tracking-wider font-bold"
                 >
                   {period === "Today"
                     ? "Aujourd'hui"
@@ -434,12 +448,12 @@ export default function BarberQueue({ barberId, barberName }) {
             />
             <StatCard
               icon={DollarSign}
-              label={`Mon Gain Période (50% + Tips)`}
-              value={
-                isStatsLoading
-                  ? "..."
-                  : `DZD ${(Number(statsData.summary.totalRevenue || 0) * 0.5 + Number(statsData.summary.totalTips || 0)).toFixed(2)}`
+              label={
+                isOwner
+                  ? "Mon Gain (Propriétaire - 100% Salon)"
+                  : `Mon Gain Période (${myCommissionRate}% + Tips)`
               }
+              value={isStatsLoading ? "..." : `DZD ${myPeriodGain.toFixed(2)}`}
               colorClass="text-green-400"
               highlight={true}
             />
@@ -451,50 +465,49 @@ export default function BarberQueue({ barberId, barberName }) {
             />
           </div>
 
-          {/* PORTEFEUILLE (WALLET) */}
+          {/* PORTEFEUILLE */}
           <div className="bg-slate-900 border-2 border-amber-500 p-4 sm:p-5 shadow-lg">
-            <div className="flex flex-wrap justify-between items-center gap-2 mb-3 border-b border-amber-500/30 pb-2">
-              <h3 className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-amber-500 flex items-center gap-1.5 min-w-0">
-                <Wallet size={16} className="shrink-0" />{" "}
-                <span className="truncate">Mon Portefeuille Personnel</span>
+            <div className="flex justify-between items-center mb-3 border-b border-amber-500/30 pb-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-amber-500 flex items-center gap-1.5">
+                <Wallet size={16} /> Mon Portefeuille Personnel
               </h3>
               {balanceData.pendingRequests?.length > 0 && (
-                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-2 py-0.5 font-bold text-[9px] uppercase animate-pulse whitespace-nowrap">
+                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-2 py-0.5 font-bold text-[9px] uppercase animate-pulse">
                   Demande en cours
                 </span>
               )}
             </div>
 
-            <div className="flex flex-col lg:flex-row justify-between items-stretch gap-3">
-              <div className="grid grid-cols-2 flex-1 gap-3">
-                <div className="bg-slate-950 border border-slate-800 p-3 text-center min-w-0">
+            <div className="flex flex-col lg:flex-row justify-between items-stretch gap-4">
+              <div className="flex flex-1 gap-3">
+                <div className="flex-1 bg-slate-950 border border-slate-800 p-3 text-center">
                   <p className="text-[9px] uppercase font-bold text-slate-500 tracking-widest mb-1">
                     Total Gagné
                   </p>
-                  <p className="text-sm sm:text-lg font-mono font-bold text-slate-200 break-words">
+                  <p className="text-base sm:text-lg font-mono font-bold text-slate-200">
                     DZD {Number(balanceData.totalEarned || 0).toFixed(2)}
                   </p>
                 </div>
-                <div className="bg-slate-950 border border-slate-800 p-3 text-center min-w-0">
+                <div className="flex-1 bg-slate-950 border border-slate-800 p-3 text-center">
                   <p className="text-[9px] uppercase font-bold text-red-500 tracking-widest mb-1">
                     Déjà Récupéré
                   </p>
-                  <p className="text-sm sm:text-lg font-mono font-bold text-red-400 break-words">
+                  <p className="text-base sm:text-lg font-mono font-bold text-red-400">
                     - DZD {Number(balanceData.totalRetrieved || 0).toFixed(2)}
                   </p>
                 </div>
               </div>
 
-              <div className="flex-1 bg-[#0a0a0a] border-2 border-slate-800 p-3 flex flex-wrap justify-between items-center gap-2 shadow-inner min-w-0">
-                <div className="min-w-0">
+              <div className="flex-1 bg-[#0a0a0a] border-2 border-slate-800 p-3 flex justify-between items-center shadow-inner">
+                <div>
                   <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block">
                     Solde Disponible
                   </span>
                   <span className="text-[9px] text-slate-600 font-bold">
-                    À retirer en caisse
+                    À réclamer en caisse
                   </span>
                 </div>
-                <p className="text-lg sm:text-2xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)] break-words">
+                <p className="text-xl sm:text-2xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)]">
                   DZD{" "}
                   {(
                     balanceData.availableToRequest ??
@@ -519,272 +532,278 @@ export default function BarberQueue({ barberId, barberName }) {
                     balanceData.currentBalance ??
                     0) <= 0
                 }
-                className="py-3.5 sm:py-4 px-6 font-bold text-xs tracking-widest uppercase shadow-md shrink-0 whitespace-nowrap"
+                className="py-4 px-6 font-bold text-xs tracking-widest uppercase shadow-md shrink-0"
               >
-                <Banknote size={16} className="mr-2 shrink-0" /> Demander
-                Retrait
+                <Banknote size={16} className="mr-2" /> Demander Retrait
               </Button>
             </div>
           </div>
 
-          {/* ── ONGLETS POUR BASCULER ENTRE LES TABLEAUX (FIN L'EMPILEMENT) ── */}
+          {/* ONGLETS DES TABLEAUX */}
           <div className="bg-slate-900 border border-slate-800 shadow-sm overflow-hidden">
-            <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-950/40 overflow-x-auto">
+            <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-950/40">
               <button
                 onClick={() => setStatsSubTab("services")}
-                className={`px-3 sm:px-4 py-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all border whitespace-nowrap shrink-0 ${
+                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border ${
                   statsSubTab === "services"
                     ? "bg-amber-500 text-slate-950 border-amber-500 shadow-md"
                     : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200"
                 }`}
               >
-                📋 Prestations ({statsData.history.length})
+                📋 Prestations Validées ({statsData.history.length})
               </button>
               <button
                 onClick={() => setStatsSubTab("payouts")}
-                className={`px-3 sm:px-4 py-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all border whitespace-nowrap shrink-0 ${
+                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border ${
                   statsSubTab === "payouts"
                     ? "bg-amber-500 text-slate-950 border-amber-500 shadow-md"
                     : "bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200"
                 }`}
               >
-                🏦 Retraits ({balanceData.payoutHistory.length})
+                🏦 Historique Retraits ({balanceData.payoutHistory.length})
               </button>
             </div>
 
-            {/* RENDU DU TABLEAU ACTIF */}
-            <div className="overflow-x-auto">
-              {statsSubTab === "services" ? (
-                <DataTable
-                  headers={[
-                    { label: "Ref" },
-                    { label: "Client" },
-                    { label: "Prestation" },
-                    { label: "Tips", align: "right" },
-                    { label: "Prix", align: "right" },
-                    { label: "Ma Part", align: "right" },
-                  ]}
-                >
-                  {isStatsLoading ? (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="py-8 text-center animate-pulse text-amber-500 text-xs"
-                      >
-                        Chargement...
+            {statsSubTab === "services" ? (
+              <DataTable
+                headers={[
+                  { label: "Ref" },
+                  { label: "Client" },
+                  { label: "Prestation" },
+                  { label: "Tips", align: "right" },
+                  { label: "Prix", align: "right" },
+                  { label: "Ma Part", align: "right" },
+                ]}
+              >
+                {isStatsLoading ? (
+                  <tr>
+                    <td
+                      colSpan="6"
+                      className="py-8 text-center animate-pulse text-amber-500 text-xs"
+                    >
+                      Chargement...
+                    </td>
+                  </tr>
+                ) : statsData.history.length > 0 ? (
+                  statsData.history.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="border-b border-slate-800 hover:bg-slate-800/40"
+                    >
+                      <td className="px-4 py-3 font-mono font-bold text-slate-500 text-[10px]">
+                        #{t.id}
                       </td>
-                    </tr>
-                  ) : statsData.history.length > 0 ? (
-                    statsData.history.map((t) => (
-                      <tr
-                        key={t.id}
-                        className="border-b border-slate-800 hover:bg-slate-800/40"
-                      >
-                        <td className="px-4 py-3 font-mono font-bold text-slate-500 text-[10px] whitespace-nowrap">
-                          #{t.id}
-                        </td>
-                        <td className="px-4 py-3 font-bold text-slate-200 uppercase text-xs whitespace-nowrap">
-                          {t.client}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300 italic text-xs">
-                          {t.service}
-                          {t.productCost > 0 && (
-                            <span className="block text-[9px] text-amber-500 not-italic font-bold">
-                              (Dose produit : -{t.productCost} DA)
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-green-400 text-xs whitespace-nowrap">
-                          {t.tip > 0 ? `+${Number(t.tip).toFixed(0)}` : "--"}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 text-xs whitespace-nowrap">
-                          {Number(t.price).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff00] text-sm whitespace-nowrap">
-                          {(
-                            Math.max(
-                              0,
-                              Number(t.originalPrice ?? t.price) -
-                                Number(t.productCost || 0),
-                            ) *
-                              0.5 +
-                            Number(t.tip)
-                          ).toFixed(2)}{" "}
-                          DA
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="text-center py-10 text-slate-600 font-bold uppercase text-[10px] tracking-widest"
-                      >
-                        Aucune coupe enregistrée.
+                      <td className="px-4 py-3 font-bold text-slate-200 uppercase text-xs">
+                        {t.client}
                       </td>
-                    </tr>
-                  )}
-                </DataTable>
-              ) : (
-                <DataTable
-                  headers={[
-                    { label: "Date" },
-                    { label: "Statut" },
-                    { label: "Validé par" },
-                    { label: "Montant", align: "right" },
-                  ]}
-                >
-                  {balanceData.payoutHistory.length > 0 ? (
-                    balanceData.payoutHistory.map((p) => (
-                      <tr
-                        key={p.id}
-                        className="border-b border-slate-800 hover:bg-slate-800/40"
-                      >
-                        <td className="px-4 py-3 text-[10px] font-mono text-slate-400 whitespace-nowrap">
-                          {new Date(p.createdAt).toLocaleDateString("fr-FR")} à{" "}
-                          {new Date(p.createdAt).toLocaleTimeString("fr-FR", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span
-                            className={`inline-block px-2.5 py-0.5 font-bold text-[9px] uppercase border ${
-                              p.status === "approved"
-                                ? "bg-green-500/10 text-green-500 border-green-500/20"
-                                : p.status === "pending"
-                                  ? "bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse"
-                                  : "bg-red-500/10 text-red-500 border-red-500/20"
-                            }`}
-                          >
-                            {p.status === "approved"
-                              ? "Payé"
-                              : p.status === "pending"
-                                ? "En attente"
-                                : "Refusé"}
+                      <td className="px-4 py-3 text-slate-300 italic text-xs">
+                        {t.service}
+                        {t.productCost > 0 && (
+                          <span className="block text-[9px] text-amber-500 not-italic font-bold">
+                            (Dose déduite : -{t.productCost} DA)
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-[10px] font-bold text-slate-300 uppercase whitespace-nowrap">
-                          {p.processedBy || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-200 text-xs whitespace-nowrap">
-                          DZD {p.amount.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan="4"
-                        className="text-center py-8 text-slate-600 font-bold uppercase text-[10px] tracking-widest"
-                      >
-                        Aucun historique de retrait.
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-green-400 text-xs">
+                        {t.tip > 0 ? `+${Number(t.tip).toFixed(0)}` : "--"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 text-xs">
+                        {Number(t.price).toFixed(2)}
+                      </td>
+
+                      {/* ── C'EST CE DERNIER <td/> QU'IL FAUT REMPLACER ── */}
+                      <td className="px-4 py-3 text-right font-mono font-bold text-[#00ff00] text-sm">
+                        {(
+                          Math.max(
+                            0,
+                            Number(t.originalPrice ?? t.price) -
+                              Number(t.productCost || 0),
+                          ) *
+                            effectiveRate +
+                          Number(t.tip || 0)
+                        ).toFixed(2)}{" "}
+                        DA
+                      </td>
+                      {/* ──────────────────────────────────────────────── */}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan="6"
+                      className="text-center py-10 text-slate-600 font-bold uppercase text-[10px] tracking-widest"
+                    >
+                      Aucune coupe enregistrée.
+                    </td>
+                  </tr>
+                )}
+              </DataTable>
+            ) : (
+              <DataTable
+                headers={[
+                  { label: "Date" },
+                  { label: "Statut" },
+                  { label: "Validé par" },
+                  { label: "Montant", align: "right" },
+                ]}
+              >
+                {balanceData.payoutHistory.length > 0 ? (
+                  balanceData.payoutHistory.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="border-b border-slate-800 hover:bg-slate-800/40"
+                    >
+                      <td className="px-4 py-3 text-[10px] font-mono text-slate-400">
+                        {new Date(p.createdAt).toLocaleDateString("fr-FR")} à{" "}
+                        {new Date(p.createdAt).toLocaleTimeString("fr-FR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 font-bold text-[9px] uppercase border ${
+                            p.status === "approved"
+                              ? "bg-green-500/10 text-green-500 border-green-500/20"
+                              : p.status === "pending"
+                                ? "bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse"
+                                : "bg-red-500/10 text-red-500 border-red-500/20"
+                          }`}
+                        >
+                          {p.status === "approved"
+                            ? "Payé"
+                            : p.status === "pending"
+                              ? "En attente"
+                              : "Refusé"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[10px] font-bold text-slate-300 uppercase">
+                        {p.processedBy || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-slate-200 text-xs">
+                        DZD {p.amount.toFixed(2)}
                       </td>
                     </tr>
-                  )}
-                </DataTable>
-              )}
-            </div>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan="4"
+                      className="text-center py-8 text-slate-600 font-bold uppercase text-[10px] tracking-widest"
+                    >
+                      Aucun historique de retrait.
+                    </td>
+                  </tr>
+                )}
+              </DataTable>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── MODAL 1 : FINALISER LA COUPE ── */}
+      {/* ── MODAL : FINALISER LA COUPE (COMPACTE & RESPONSIVE) ── */}
       <Modal
         isOpen={showServiceModal}
         onClose={() => !isProcessing && setShowServiceModal(false)}
       >
-        <div className="p-4 sm:p-8 max-h-[85vh] overflow-y-auto bg-slate-950">
-          <h2 className="text-lg sm:text-xl font-serif font-bold text-amber-500 mb-2 uppercase tracking-wider text-center">
-            Finaliser la Prestation
+        <div className="p-4 sm:p-6 max-h-[85vh] overflow-y-auto bg-slate-950 w-full">
+          <h2 className="text-base sm:text-lg font-serif font-bold text-amber-500 mb-1 uppercase tracking-wider text-center">
+            Valider la Prestation
           </h2>
-          <p className="text-[10px] uppercase text-slate-500 tracking-widest font-bold text-center border-b border-slate-800 pb-4 mb-5">
-            Sélectionnez la prestation réalisée
+          <p className="text-[9px] uppercase text-slate-500 tracking-widest font-bold text-center border-b border-slate-800 pb-2.5 mb-3">
+            Sélectionnez la coupe réalisée
           </p>
 
-          <div className="mb-6">
-            <h3 className="text-xs font-bold tracking-widest uppercase text-slate-100 mb-3 bg-slate-900 py-2 px-3 border border-slate-800">
-              1. Prestation Réalisée *
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {availableServices.map((service) => {
-                const isSelected = selectedService?.id === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => setSelectedService(service)}
-                    className={`p-3.5 border transition-all text-left flex flex-col justify-between min-h-[90px] ${
-                      isSelected
-                        ? "border-amber-500 bg-amber-500/10 shadow-md"
-                        : "border-slate-800 bg-slate-950 hover:border-slate-600"
-                    }`}
-                  >
-                    <p className="font-bold text-slate-200 uppercase text-xs leading-snug break-words">
-                      {service.name}
-                    </p>
-                    <p
-                      className={`text-base font-mono mt-2 font-bold ${isSelected ? "text-amber-500" : "text-slate-500"}`}
+          <div className="mb-4">
+            {/* BARRE DE RECHERCHE EMPILABLE (S'adapte aux petits écrans sans dépasser) */}
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-slate-900 py-2.5 px-3 border border-slate-800 mb-3 gap-2">
+              <h3 className="text-xs font-bold tracking-widest uppercase text-slate-100">
+                Menu Prestations
+              </h3>
+              <input
+                type="text"
+                placeholder="Recherche rapide..."
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                className="bg-slate-950 border border-slate-700 text-slate-200 px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500 rounded-none w-full sm:w-48 font-bold"
+              />
+            </div>
+
+            {/* GRILLE DES COUPES COMPACTE (Moins de scroll vertical) */}
+            <div className="grid grid-cols-2 gap-2 max-h-[420px] sm:max-h-[480px] overflow-y-auto pr-1">
+              {availableServices
+                .filter((s) =>
+                  s.name.toLowerCase().includes(serviceSearch.toLowerCase()),
+                )
+                // ── FILTRE VIP : On cache si la coupe est VIP et le barbier n'est pas VIP ──
+                .filter((s) => (s.isVipOnly ? isBarberVip : true))
+                // ───────────────────────────────────────────────────────────────────────────
+                .map((service) => {
+                  const isSelected = selectedService?.id === service.id;
+                  return (
+                    <button
+                      key={service.id}
+                      onClick={() => setSelectedService(service)}
+                      className={`p-2.5 border transition-all text-left flex flex-col justify-between min-h-[65px] ${
+                        isSelected
+                          ? "border-amber-500 bg-amber-500/10 shadow-md"
+                          : "border-slate-800 bg-slate-950 hover:border-slate-600"
+                      }`}
                     >
-                      DZD {Number(service.price).toFixed(2)}
-                    </p>
-                  </button>
-                );
-              })}
+                      <div className="flex justify-between items-start gap-1">
+                        <p className="font-bold text-slate-200 uppercase text-xs leading-tight">
+                          {service.name}
+                        </p>
+                        {service.hasProductDeduction && (
+                          <span className="text-[8px] font-bold text-amber-400 bg-amber-400/10 px-1 border border-amber-400/30 shrink-0">
+                            Dose: {service.productCost} DA
+                          </span>
+                        )}
+                      </div>
+
+                      <p
+                        className={`text-xs sm:text-sm font-mono mt-1.5 font-bold ${isSelected ? "text-amber-500" : "text-slate-400"}`}
+                      >
+                        DZD {Number(service.price).toFixed(2)}
+                      </p>
+                    </button>
+                  );
+                })}
             </div>
           </div>
 
-          <div className="mb-6">
-            <h3 className="text-xs font-bold tracking-widest uppercase text-slate-100 mb-3 bg-slate-900 py-2 px-3 border border-slate-800">
-              2. Produits Vendus (Optionnel)
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {availableProducts.map((product) => {
-                const isSelected = selectedProducts.find(
-                  (p) => p.id === product.id,
-                );
-                return (
-                  <button
-                    key={product.id}
-                    onClick={() => handleToggleProduct(product)}
-                    className={`p-2.5 border transition-all text-left flex items-center justify-between gap-2 ${
-                      isSelected
-                        ? "border-green-500/50 bg-green-500/10 text-green-400"
-                        : "border-slate-800 bg-slate-950 text-slate-400"
-                    }`}
-                  >
-                    <span className="font-bold uppercase text-[11px] truncate min-w-0">
-                      {product.name}
-                    </span>
-                    <span className="font-mono text-xs font-bold shrink-0">
-                      DZD {Number(product.salePrice).toFixed(2)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* TOTAL AVEC CALCUL +50% VISIBLE */}
+          <div className="pt-2.5 border-t border-slate-800 flex flex-col mb-4">
+            {/* Alerte visuelle si c'est un RDV VIP */}
+            {currentTicket?.isReservation && selectedService && (
+              <div className="bg-amber-500/10 border border-amber-500/30 p-2 mb-2">
+                <p className="text-[10px] font-bold text-amber-500 uppercase flex items-center gap-1">
+                  <Crown size={12} /> Majoration Rendez-vous VIP (+50%)
+                </p>
+                <p className="text-[9px] text-slate-400 font-mono mt-0.5">
+                  Prix de base : {Number(selectedService.price).toFixed(2)} DA →
+                  Majoré : {(Number(selectedService.price) * 1.5).toFixed(2)} DA
+                </p>
+              </div>
+            )}
 
-          <div className="pt-4 border-t border-slate-800 flex justify-between items-end mb-5 gap-3 flex-wrap">
-            <div className="min-w-0">
+            <div className="flex justify-between items-end">
               <p className="text-[9px] uppercase font-bold text-slate-500 tracking-widest">
-                Total transmis en caisse :
+                Montant à transmettre :
               </p>
-              <p className="text-2xl sm:text-3xl font-bold font-mono text-amber-500 leading-none mt-1 break-words">
+              <p className="text-2xl sm:text-3xl font-bold font-mono text-amber-500 leading-none mt-1">
                 DZD{" "}
                 {selectedService
-                  ? (
-                      Number(selectedService.price) +
-                      selectedProducts.reduce(
-                        (s, p) => s + Number(p.salePrice),
-                        0,
-                      )
+                  ? (currentTicket?.isReservation
+                      ? Number(selectedService.price) * 1.5
+                      : Number(selectedService.price)
                     ).toFixed(2)
                   : "0.00"}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             <Button
               variant="outline"
               fullWidth
@@ -799,7 +818,7 @@ export default function BarberQueue({ barberId, barberName }) {
               fullWidth
               onClick={handleCompleteService}
               disabled={isProcessing || !selectedService}
-              className="py-3 text-xs font-bold"
+              className="py-3 text-xs font-bold shadow-md"
             >
               {isProcessing ? "Transmission..." : "Envoyer en Caisse"}
             </Button>
@@ -814,14 +833,14 @@ export default function BarberQueue({ barberId, barberName }) {
       >
         <form
           onSubmit={handleRequestPayout}
-          className="p-4 sm:p-8 bg-slate-950 border-t-4 border-amber-500"
+          className="p-6 sm:p-8 bg-slate-950 border-t-4 border-amber-500"
         >
-          <h3 className="text-base sm:text-lg font-serif font-bold text-amber-500 mb-3 uppercase tracking-wider text-center">
+          <h3 className="text-lg font-serif font-bold text-amber-500 mb-2 uppercase tracking-wider text-center">
             Demande de Retrait d'Espèces
           </h3>
           <p className="text-[11px] text-slate-400 text-center mb-5 leading-relaxed">
-            Transmettez votre demande à la réception pour récupérer vos gains en
-            espèces.
+            Transmettez votre demande à la réception pour récupérer vos
+            commissions en espèces.
           </p>
 
           <div className="space-y-4">
@@ -836,9 +855,9 @@ export default function BarberQueue({ barberId, barberName }) {
               autoFocus
             />
 
-            <div className="flex justify-between items-center gap-2 text-xs font-bold bg-slate-900 p-3 border border-slate-800 flex-wrap">
+            <div className="flex justify-between items-center text-xs font-bold bg-slate-900 p-3 border border-slate-800">
               <span className="text-slate-500 uppercase">Disponible :</span>
-              <span className="text-green-400 font-mono text-sm break-words">
+              <span className="text-green-400 font-mono text-sm">
                 DZD{" "}
                 {(
                   balanceData.availableToRequest ??

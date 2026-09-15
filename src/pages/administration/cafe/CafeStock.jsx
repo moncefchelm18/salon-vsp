@@ -440,7 +440,6 @@ export default function CafeStock() {
       ) : activeTab === "inventory" ? (
         <DataTable
           headers={[
-            { label: "Image", sortable: false },
             { label: "Référence" },
             { label: "Produit" },
             { label: "Catégorie" },
@@ -455,21 +454,6 @@ export default function CafeStock() {
               key={p.id}
               className="border-b border-subtle hover:bg-brand/5 transition-colors"
             >
-              <td className="px-6 py-2">
-                <div className="w-10 h-10 bg-main border border-subtle flex justify-center items-center overflow-hidden">
-                  {p.image ? (
-                    <img
-                      src={p.image}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-[8px] uppercase font-bold text-t-muted">
-                      Img
-                    </span>
-                  )}
-                </div>
-              </td>
               <td className="px-6 py-4 font-mono font-bold text-sm text-t-muted">
                 {p.reference || "--"}
               </td>

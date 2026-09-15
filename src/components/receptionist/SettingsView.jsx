@@ -357,7 +357,7 @@ export default function SettingsView() {
                     value={systemInfo.tabletUrl}
                     size={128}
                     bgColor="#0f172a"
-                    fgColor="#d4af37"
+                    fgColor="#779e45"
                     level="H"
                   />
                 </div>

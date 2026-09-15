@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Button from "./common/Button"; // Reusing our master button
 import { User, Lock } from "lucide-react";
-import logo from "../assets/images/logo-transparent.png";
+import logo from "../assets/images/logo_no_bg.png";
 
 export default function LoginForm({ onSubmit, isLoading }) {
   const [username, setUsername] = useState("");

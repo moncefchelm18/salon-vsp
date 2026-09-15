@@ -146,7 +146,6 @@ export default function SalonStock() {
       ) : (
         <DataTable
           headers={[
-            { label: "Image", sortable: false },
             { label: "Désignation Produit" },
             { label: "Prix Achat (Grossiste)" },
             { label: "Prix Vente (Client)" },
@@ -160,21 +159,6 @@ export default function SalonStock() {
               key={p.id}
               className="border-b border-subtle hover:bg-brand/5 transition-colors"
             >
-              {/* Photo du produit */}
-              <td className="px-6 py-3">
-                <div className="w-12 h-12 bg-main border border-subtle flex justify-center items-center overflow-hidden">
-                  {p.image ? (
-                    <img
-                      src={p.image}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <Package size={20} className="text-t-muted opacity-40" />
-                  )}
-                </div>
-              </td>
-
               {/* Nom */}
               <td className="px-6 py-4 font-bold text-t-main text-sm">
                 {p.name}
