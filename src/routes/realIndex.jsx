@@ -19,18 +19,13 @@ import SettingsView from "../components/receptionist/SettingsView";
 import ArdoiseManager from "../components/receptionist/ArdoiseManager";
 import CaisseManager from "../components/receptionist/CaisseManager";
 import SalonPOS from "../pages/administration/coiffure/SalonPOS";
-import SalonStock from "../pages/administration/coiffure/SalonStock";
 
 // (CAFE) PAGES
 import CafeCommandes from "../pages/administration/cafe/CafeCommandes";
 import CafeProducts from "../pages/administration/cafe/CafeProducts";
 import CafeCategories from "../pages/administration/cafe/CafeCategories";
-import CafeSuppliers from "../pages/administration/cafe/CafeSuppliers";
-import CafeStock from "../pages/administration/cafe/CafeStock";
 import CafeReports from "../pages/administration/cafe/CafeReports";
 import CafeDashboard from "../pages/administration/cafe/CafeDashboard";
-import CafeSettings from "../pages/administration/cafe/CafeSettings";
-import ExpensesManager from "../components/receptionist/ExpensesManager";
 import CEODashboard from "../pages/administration/CEODashboard";
 import ActiviteView from "../pages/administration/ActiviteView";
 import StatistiquesView from "../pages/administration/StatistiquesView";
@@ -76,7 +71,6 @@ export default function AppRoutes() {
         <Route path="paiements" element={<PaymentsManager />} />
         <Route path="ardoise" element={<ArdoiseManager />} />
         <Route path="caisse" element={<CaisseManager />} />
-        <Route path="charges" element={<ExpensesManager />} />
 
         {/* Gestion Salon */}
         <Route
@@ -84,14 +78,6 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <SalonManager />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="stock"
-          element={
-            <ProtectedRoute allowedRoles={["admin", "receptionist"]}>
-              <SalonStock />
             </ProtectedRoute>
           }
         />
@@ -183,7 +169,7 @@ export default function AppRoutes() {
         }
       />
 
-      {/* 3. ADMINISTRATION (CAFE) */}
+      {/* 3. ADMINISTRATION (CAFÉ) */}
       <Route
         path="/administration/cafe"
         element={
@@ -196,9 +182,8 @@ export default function AppRoutes() {
         <Route path="dashboard" element={<CafeDashboard />} />
         <Route path="commandes" element={<CafeCommandes />} />
         <Route path="caisse" element={<CaisseManager />} />
-        <Route path="charges" element={<ExpensesManager />} />
 
-        {/* Stocks & Articles */}
+        {/* Menu & Boissons */}
         <Route
           path="produits"
           element={
@@ -212,22 +197,6 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <CafeCategories />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="stock"
-          element={
-            <ProtectedRoute allowedRoles={["admin"]}>
-              <CafeStock />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="fournisseurs"
-          element={
-            <ProtectedRoute allowedRoles={["admin"]}>
-              <CafeSuppliers />
             </ProtectedRoute>
           }
         />

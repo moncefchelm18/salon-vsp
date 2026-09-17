@@ -97,25 +97,35 @@ export default function CEODashboard() {
   const handlePrintSettlementTicket = () => {
     if (!bilanData) return;
 
+    const s = bilanData.settlement;
+    const salonDue = salonSettlement.totalDue ?? salonSettlement.finalNet ?? 0;
+    const cafeDue = cafeSettlement.totalDue ?? cafeSettlement.finalNet ?? 0;
+
     setPrintData({
       ticketId: "CLOTURE-GERANCE",
       clientName: "Bilan des Pôles (Mhasba)",
       barber: "Gérance Générale",
       service: `Période : ${filterPeriod.toUpperCase()}`,
-      haircutPrice: salonSettlement.finalNet || 0,
+      haircutPrice: salonDue,
       items: [
         {
-          name: "Part Nette Pôle Salon",
-          price: salonSettlement.finalNet || 0,
+          name:
+            salonSettlement.floatRefund > 0
+              ? "Part Salon (Net + Fond Avancé)"
+              : "Part Nette Salon",
+          price: salonDue,
           quantity: 1,
         },
         {
-          name: "Part Nette Pôle Café",
-          price: cafeSettlement.finalNet || 0,
+          name:
+            cafeSettlement.floatRefund > 0
+              ? "Part Café (Net + Fond Avancé)"
+              : "Part Nette Café",
+          price: cafeDue,
           quantity: 1,
         },
       ],
-      grandTotal: s?.consolidatedNetProfit || 0,
+      grandTotal: salonDue + cafeDue,
       paidAmount: displayedCounted,
       unpaidDebt: displayedDiff < 0 ? Math.abs(displayedDiff) : 0,
     });
@@ -731,7 +741,7 @@ export default function CEODashboard() {
                       </span>
                     </div>
                     <div className="flex justify-between text-blue-400">
-                      <span>(-) Commissions Coiffeurs payées :</span>
+                      <span>(-) Commissions Coiffeurs :</span>
                       <span>
                         - DZD{" "}
                         {formatMoney(salonSettlement.barberCommissions || 0)}
@@ -743,20 +753,35 @@ export default function CEODashboard() {
                         - DZD {formatMoney(salonSettlement.expenses || 0)}
                       </span>
                     </div>
+
+                    {/* LIGNE DE REMBOURSEMENT DU FOND SI AVANCÉ PAR LE SALON */}
+                    {salonSettlement.floatRefund > 0 && (
+                      <div className="flex justify-between text-green-400 bg-green-500/10 p-2 border border-green-500/20 font-bold">
+                        <span>(+) Récupération Fond Avancé le Matin :</span>
+                        <span>
+                          + DZD {formatMoney(salonSettlement.floatRefund)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="bg-[#0a0a0a] border border-slate-800 p-4 mt-6 ml-3 flex justify-between items-center shadow-inner">
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                      Règlement Net Salon
+                      Total Liquide Récupéré par Salon
                     </span>
                     <span className="text-[9px] text-slate-500 font-bold">
-                      Bénéfice net revenant au Pôle Salon
+                      {salonSettlement.floatRefund > 0
+                        ? "Bénéfice Net + Monnaie Avancée"
+                        : "Bénéfice net légitime"}
                     </span>
                   </div>
                   <span className="text-3xl font-mono font-black text-blue-400">
-                    DZD {formatMoney(salonSettlement.finalNet || 0)}
+                    DZD{" "}
+                    {formatMoney(
+                      salonSettlement.totalDue ?? salonSettlement.finalNet ?? 0,
+                    )}
                   </span>
                 </div>
               </div>
@@ -794,25 +819,40 @@ export default function CEODashboard() {
                       </span>
                     </div>
                     <div className="flex justify-between text-red-400">
-                      <span>(-) Achats Fournisseurs &amp; Charges Café :</span>
+                      <span>(-) Achats &amp; Dépenses Caisse :</span>
                       <span>
                         - DZD {formatMoney(cafeSettlement.expenses || 0)}
                       </span>
                     </div>
+
+                    {/* LIGNE DE REMBOURSEMENT DU FOND SI AVANCÉ PAR LE CAFÉ */}
+                    {cafeSettlement.floatRefund > 0 && (
+                      <div className="flex justify-between text-green-400 bg-green-500/10 p-2 border border-green-500/20 font-bold">
+                        <span>(+) Récupération Fond Avancé le Matin :</span>
+                        <span>
+                          + DZD {formatMoney(cafeSettlement.floatRefund)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="bg-[#0a0a0a] border border-slate-800 p-4 mt-6 ml-3 flex justify-between items-center shadow-inner">
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                      Règlement Net Cafétéria
+                      Total Liquide Récupéré par Café
                     </span>
                     <span className="text-[9px] text-slate-500 font-bold">
-                      Bénéfice net revenant au Pôle Café
+                      {cafeSettlement.floatRefund > 0
+                        ? "Bénéfice Net + Monnaie Avancée"
+                        : "Bénéfice net légitime"}
                     </span>
                   </div>
                   <span className="text-3xl font-mono font-black text-amber-400">
-                    DZD {formatMoney(cafeSettlement.finalNet || 0)}
+                    DZD{" "}
+                    {formatMoney(
+                      cafeSettlement.totalDue ?? cafeSettlement.finalNet ?? 0,
+                    )}
                   </span>
                 </div>
               </div>

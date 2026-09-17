@@ -803,11 +803,13 @@ export default function ClientsManager() {
               className="w-full bg-main border border-subtle text-t-main px-4 py-4 focus:outline-none focus:border-brand font-bold uppercase tracking-widest text-xs"
             >
               <option value="">-- Sélectionner un Barbier --</option>
-              {barbers.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} {ticketToEdit?.barber === b.name ? "(Actuel)" : ""}
-                </option>
-              ))}
+              {barbers
+                .filter((b) => b.isPresent !== false)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} {b.poste ? `(Poste ${b.poste})` : "(Sans Poste)"}
+                  </option>
+                ))}
             </select>
           </div>
 

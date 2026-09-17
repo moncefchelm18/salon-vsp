@@ -10,14 +10,13 @@ import {
   XOctagon,
 } from "lucide-react";
 
-import Button from "../../components/common/Button";
-
 export default function POSCart({
   cart,
   heldOrdersCount,
   onUpdateQuantity,
   onItemClick,
   onCheckout,
+  onPrintOnly, // <-- NOUVELLE ACTION POUR IMPRIMER SEUL
   onHoldOrder,
   onRestoreOrder,
   onClearCart,
@@ -42,59 +41,61 @@ export default function POSCart({
   const finalTotal = Math.max(0, subTotal - discountAmount);
 
   return (
-    <div className="flex flex-col h-full bg-surface border-l border-subtle shadow-2xl z-10">
-      {/* --- CART HEADER & HOLD CONTROLS (Boutons Solides) --- */}
-      <div className="p-4 border-b border-subtle bg-main shrink-0 flex flex-col xl:flex-row justify-between xl:items-center gap-3">
+    <div className="flex flex-col h-full bg-surface border-l border-subtle shadow-2xl z-10 select-none">
+      {/* ── HEADER DU PANIER AVEC ATTENTE, RAPPELER & VIDER ── */}
+      <div className="p-3 border-b border-subtle bg-main shrink-0 flex justify-between items-center gap-2">
         <div>
-          <h2 className="text-xl font-bold text-t-main uppercase tracking-widest leading-none">
+          <h2 className="text-lg font-bold text-t-main uppercase tracking-widest leading-none">
             Ticket
           </h2>
-          <p className="text-xs text-t-muted font-bold uppercase tracking-widest mt-1">
+          <p className="text-[10px] text-t-muted font-bold uppercase tracking-widest mt-1">
             {cart.length} Ligne(s)
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+        <div className="flex items-center gap-1.5">
           {heldOrdersCount > 0 && (
             <button
+              type="button"
               onClick={onRestoreOrder}
-              className="flex-1 xl:flex-none flex items-center justify-center px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-none shadow-md transition-colors relative"
+              className="flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] uppercase rounded-none shadow-md relative transition-colors"
+              title="Rappeler une commande en attente"
             >
-              <ListRestart size={16} className="mr-2" /> Rappeler
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] animate-pulse shadow-lg border-2 border-surface">
+              <ListRestart size={13} className="mr-1" /> Rappeler
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px] animate-pulse border border-white">
                 {heldOrdersCount}
               </span>
             </button>
           )}
 
           <button
-            onClick={onClearCart}
+            type="button"
+            onClick={onHoldOrder}
             disabled={cart.length === 0}
-            className="flex-1 xl:flex-none flex items-center justify-center px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:bg-slate-600 rounded-none shadow-md transition-colors"
-            title="Vider la commande (Annuler)"
+            className="flex items-center px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] uppercase rounded-none shadow-md disabled:opacity-40 transition-colors"
+            title="Mettre en attente"
           >
-            <XOctagon size={16} className="mr-2 xl:mr-0" />{" "}
-            <span className="xl:hidden">Vider</span>
+            <PauseCircle size={13} className="mr-1" /> Attente
           </button>
 
           <button
-            onClick={onHoldOrder}
+            type="button"
+            onClick={onClearCart}
             disabled={cart.length === 0}
-            className="flex-1 xl:flex-none flex items-center justify-center px-4 py-2 text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:bg-slate-600 rounded-none shadow-md transition-colors"
-            title="Mettre en attente"
+            className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-none shadow-md disabled:opacity-40 transition-colors"
+            title="Vider la commande (Annuler)"
           >
-            <PauseCircle size={16} className="mr-2 xl:mr-0" />{" "}
-            <span className="xl:hidden">Attente</span>
+            <XOctagon size={15} />
           </button>
         </div>
       </div>
 
-      {/* --- CART ITEMS LIST --- */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-main/50">
+      {/* ── LISTE DES ARTICLES DANS LE PANIER ── */}
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-main/40">
         {cart.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-t-muted opacity-50">
-            <Banknote size={48} className="mb-4" />
-            <span className="font-bold uppercase tracking-widest text-sm">
+          <div className="h-full flex flex-col items-center justify-center text-t-muted opacity-40">
+            <Banknote size={44} className="mb-2" />
+            <span className="font-bold uppercase tracking-widest text-xs">
               Panier Vide
             </span>
           </div>
@@ -102,48 +103,50 @@ export default function POSCart({
           cart.map((item) => (
             <div
               key={item.id}
-              className="bg-surface border-2 border-subtle p-2 flex justify-between items-stretch shadow-sm"
+              className="bg-surface border border-subtle p-2 flex justify-between items-center shadow-sm rounded-none"
             >
-              {/* Product Info (Clickable for Price Edit) */}
+              {/* Clic pour ajuster prix/remise si besoin */}
               <div
-                className="flex-1 pr-2 cursor-pointer hover:bg-main active:bg-subtle p-2 transition-colors flex flex-col justify-center"
+                className="flex-1 pr-2 cursor-pointer hover:bg-main/50 p-1 transition-colors flex flex-col justify-center min-w-0"
                 onClick={() => onItemClick(item)}
               >
-                <p className="font-bold text-t-main text-sm uppercase tracking-wide leading-tight line-clamp-2">
+                <p className="font-bold text-t-main text-xs uppercase tracking-wide leading-tight truncate">
                   {item.name}
                 </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-brand font-mono text-base font-bold">
-                    {(item.price * item.quantity).toFixed(2)}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-brand font-mono text-xs font-bold">
+                    {(item.price * item.quantity).toFixed(2)} DA
                   </p>
                   {item.originalPrice && item.price !== item.originalPrice && (
-                    <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 uppercase font-bold">
+                    <span className="text-[8px] bg-amber-500 text-white px-1 py-0.2 uppercase font-bold rounded-none">
                       Modifié
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Quantity Controls (Tactile Solid Buttons) */}
-              <div className="flex flex-col sm:flex-row items-center bg-main border border-subtle shrink-0">
+              {/* Contrôles de quantité tactiles */}
+              <div className="flex items-center bg-main border border-subtle shrink-0">
                 <button
+                  type="button"
                   onClick={() => onUpdateQuantity(item.id, -1)}
-                  className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-t-main bg-surface hover:bg-subtle border-b sm:border-b-0 sm:border-r border-subtle active:scale-95 transition-transform"
+                  className="w-8 h-8 flex items-center justify-center text-t-main hover:bg-subtle active:scale-95 rounded-none"
                 >
                   {item.quantity === 1 ? (
-                    <Trash2 size={18} className="text-red-600" />
+                    <Trash2 size={13} className="text-red-500" />
                   ) : (
-                    <Minus size={18} />
+                    <Minus size={13} />
                   )}
                 </button>
-                <span className="font-mono font-bold text-t-main w-10 sm:w-12 text-center text-base sm:text-lg">
+                <span className="font-mono font-bold text-t-main w-8 text-center text-xs">
                   {item.quantity}
                 </span>
                 <button
+                  type="button"
                   onClick={() => onUpdateQuantity(item.id, 1)}
-                  className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-t-main bg-surface hover:bg-subtle border-t sm:border-t-0 sm:border-l border-subtle active:scale-95 transition-transform"
+                  className="w-8 h-8 flex items-center justify-center text-t-main hover:bg-subtle active:scale-95 rounded-none"
                 >
-                  <Plus size={18} />
+                  <Plus size={13} />
                 </button>
               </div>
             </div>
@@ -151,93 +154,110 @@ export default function POSCart({
         )}
       </div>
 
-      {/* --- CART CHECKOUT FOOTER --- */}
-      <div className="p-4 border-t-4 border-subtle bg-surface shrink-0">
-        {/* LIGNE 1 : SOUS-TOTAL ET BOUTONS REMISE */}
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex gap-2">
+      {/* ── FOOTER DE CAISSE : REMISES, TOTAL LED & LES 3 BOUTONS ── */}
+      <div className="p-3 border-t-2 border-subtle bg-surface shrink-0 space-y-2.5">
+        {/* Ligne Remise & Sous-total */}
+        <div className="flex justify-between items-center">
+          <div className="flex gap-1.5">
             {!discountType ? (
               <>
                 <button
+                  type="button"
                   onClick={() => onApplyDiscount("percent")}
-                  className="px-5 py-2.5 bg-blue-600 text-white text-xs font-bold uppercase hover:bg-blue-500 active:scale-95 transition-all shadow-md rounded-none"
+                  className="px-2.5 py-1 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-500 active:scale-95 shadow-md rounded-none"
                 >
                   - Remise %
                 </button>
                 <button
+                  type="button"
                   onClick={() => onApplyDiscount("amount")}
-                  className="px-5 py-2.5 bg-slate-700 text-white text-xs font-bold uppercase hover:bg-slate-600 active:scale-95 transition-all shadow-md rounded-none"
+                  className="px-2.5 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-600 active:scale-95 shadow-md rounded-none"
                 >
                   - Remise DZD
                 </button>
               </>
             ) : (
               <button
+                type="button"
                 onClick={onRemoveDiscount}
-                className="px-4 py-2 bg-red-600 text-white text-xs font-bold uppercase flex items-center gap-2 shadow-md hover:bg-red-500"
+                className="px-2.5 py-1 bg-red-600 text-white text-[9px] font-bold uppercase flex items-center gap-1 shadow-md hover:bg-red-500 rounded-none"
               >
-                <Trash2 size={14} /> Annuler Remise
+                <Trash2 size={11} /> Annuler ({discountAmount.toFixed(0)} DA)
               </button>
             )}
           </div>
-          <div className="text-right">
-            <span className="text-[10px] uppercase font-bold text-t-muted block leading-none">
-              Sous-total
-            </span>
-            <span
-              className={`font-mono font-bold text-base ${discountType ? "line-through text-t-muted" : "text-t-main"}`}
-            >
-              {subTotal.toFixed(2)}
-            </span>
-          </div>
+          <span className="font-mono text-xs text-t-muted">
+            Sous-total:{" "}
+            <strong className="text-t-main">{subTotal.toFixed(2)}</strong>
+          </span>
         </div>
 
-        {/* LIGNE 2 : AFFICHAGE DE LA REMISE */}
+        {/* Bandeau Remise */}
         {discountType && (
-          <div className="flex justify-between items-center bg-amber-500 text-white p-2 mb-3 shadow-inner">
-            <span className="text-xs uppercase font-bold tracking-widest">
+          <div className="flex justify-between items-center bg-amber-500 text-white p-1.5 shadow-inner rounded-none">
+            <span className="text-[10px] uppercase font-bold tracking-widest">
               Remise{" "}
               {discountType === "percent" ? `(${discountValue}%)` : "(Fixe)"}
             </span>
-            <span className="font-mono font-bold text-lg">
-              - {discountAmount.toFixed(2)}
+            <span className="font-mono font-bold text-sm">
+              - {discountAmount.toFixed(2)} DA
             </span>
           </div>
         )}
 
-        {/* --- ÉCRAN LED POS (LE TOTAL DIGITAL) --- */}
-        <div className="bg-[#0a0a0a] p-4 border-4 border-slate-800 rounded-sm flex justify-between items-center shadow-inner mb-4">
-          <span className="text-slate-400 font-bold uppercase tracking-widest text-sm">
-            Total
+        {/* Écran Digital LED */}
+        <div className="bg-[#0a0a0a] p-3 border-2 border-slate-800 rounded-none flex justify-between items-center shadow-inner">
+          <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+            Total Net
           </span>
-          {/* Texte vert fluo avec un léger effet lumineux (drop-shadow) pour simuler un vrai écran de caisse */}
-          <span className="text-4xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)] tracking-wider">
-            {finalTotal.toFixed(2)}
+          <span className="text-2xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)] tracking-wider">
+            {finalTotal.toFixed(2)} DA
           </span>
         </div>
 
-        {/* --- SIDE-BY-SIDE BUTTONS (Boutons d'encaissement massifs) --- */}
-        <div className="flex gap-3">
-          {/* Button 1: Fast Cash */}
-          <Button
-            variant="success" // Force le vert pour l'encaissement principal
-            onClick={() => onCheckout(false)}
-            disabled={cart.length === 0 || isProcessing}
-            className="flex-1 py-5 flex flex-col items-center justify-center gap-2 text-xs font-bold tracking-widest uppercase shadow-xl leading-none h-auto disabled:opacity-50"
-          >
-            <Banknote size={24} />
-            {isProcessing ? "..." : "ENCAISSER (ESPÈCES)"}
-          </Button>
-
-          {/* Button 2: Print */}
+        {/* ═══════════════════════════════════════════════════════
+            LES 3 BOUTONS ERGONOMIQUES (EXACTEMENT COMME SALON POS)
+        ═══════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-12 gap-1.5 h-14">
+          {/* 1. GRAND BOUTON PRINCIPAL GAUCHE : ENCAISSER & TICKET (8 Cols) */}
           <button
+            type="button"
             onClick={() => onCheckout(true)}
             disabled={cart.length === 0 || isProcessing}
-            className="flex-1 py-5 flex flex-col items-center justify-center gap-2 text-[10px] font-bold tracking-widest uppercase bg-slate-800 text-white hover:bg-slate-700 transition-colors leading-none h-auto disabled:opacity-50 border-2 border-slate-700 shadow-md"
+            className="col-span-8 bg-green-600 hover:bg-green-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg disabled:opacity-40 rounded-none cursor-pointer active:scale-[0.98] transition-all"
+            title="Encaisser en espèces et imprimer le ticket thermique 80mm"
           >
-            <Printer size={20} />
-            Imprimer Ticket
+            <Banknote size={18} />
+            <Printer size={15} />
+            <span>{isProcessing ? "..." : "ENCAISSER & TICKET"}</span>
           </button>
+
+          {/* 2 & 3. DEUX BOUTONS SECONDAIRES EMPILÉS À DROITE (4 Cols) */}
+          <div className="col-span-4 flex flex-col gap-1.5">
+            {/* Encaisser SEUL (sans ticket) */}
+            <button
+              type="button"
+              onClick={() => onCheckout(false)}
+              disabled={cart.length === 0 || isProcessing}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-[9px] uppercase tracking-tighter flex items-center justify-center gap-1.5 rounded-none shadow-sm disabled:opacity-40 cursor-pointer active:scale-[0.98]"
+              title="Encaisser dans le tiroir sans imprimer de ticket"
+            >
+              <Banknote size={13} className="text-green-400" />
+              <span>Encaisser</span>
+            </button>
+
+            {/* Imprimer SEUL (sans encaisser) */}
+            <button
+              type="button"
+              onClick={onPrintOnly}
+              disabled={cart.length === 0}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-[9px] uppercase tracking-tighter flex items-center justify-center gap-1.5 rounded-none shadow-sm disabled:opacity-40 cursor-pointer active:scale-[0.98]"
+              title="Imprimer un ticket provisoire sans toucher à la caisse"
+            >
+              <Printer size={13} className="text-amber-400" />
+              <span>Ticket</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

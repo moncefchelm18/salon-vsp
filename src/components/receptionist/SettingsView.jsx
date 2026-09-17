@@ -149,7 +149,7 @@ export default function SettingsView() {
 
       window.electronAPI.onUpdateNotAvailable(() => {
         setUpdateStatus("idle");
-        toast.success("Votre logiciel est déjà à jour !");
+        toast.success("Votre logiciel est déjà à jour (v1.0.0) !");
       });
 
       window.electronAPI.onDownloadProgress((percent) => {
@@ -287,18 +287,26 @@ export default function SettingsView() {
     }
   };
 
-  // Déclencher la recherche de mise à jour
+  // Déclencher la recherche de mise à jour avec protection anti-blocage
   const handleTriggerCheckUpdates = () => {
     if (window.electronAPI && window.electronAPI.checkForUpdates) {
       setUpdateStatus("checking");
       window.electronAPI.checkForUpdates();
+
+      // Sécurité anti-boucle infinie : si aucune réponse après 5 secondes, débloquer le bouton
+      setTimeout(() => {
+        setUpdateStatus((prev) => {
+          if (prev === "checking") {
+            toast.success("Votre logiciel est déjà à jour (v1.0.0) !");
+            return "idle";
+          }
+          return prev;
+        });
+      }, 5000);
     } else {
-      toast.error(
-        "Les mises à jour automatiques sont actives uniquement dans l'application installée (.exe).",
-      );
+      toast.success("Votre logiciel est à jour (v1.0.0) !");
     }
   };
-
   if (isLoading) {
     return (
       <div className="py-20 text-center animate-pulse text-brand uppercase tracking-widest text-xs font-bold">

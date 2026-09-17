@@ -13,6 +13,10 @@ import {
   XOctagon,
   Printer,
   Store,
+  PauseCircle,
+  ListRestart,
+  Clock,
+  Play,
 } from "lucide-react";
 import api from "../../../utils/api";
 
@@ -50,11 +54,22 @@ export default function SalonPOS() {
   const [barbers, setBarbers] = useState([]);
   const [selectedBarber, setSelectedBarber] = useState("");
 
-  const [cart, setCart] = useState([]);
+  // Panier & Commandes en attente (Persistées en local)
+  const [cart, setCart] = useState(() => {
+    const saved = localStorage.getItem("vsp_salon_cart");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [heldOrders, setHeldOrders] = useState(() => {
+    const saved = localStorage.getItem("vsp_salon_held_orders");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Remises
+  // Remises & Numpad
   const [isNumpadOpen, setIsNumpadOpen] = useState(false);
   const [discountType, setDiscountType] = useState(null);
   const [discountValue, setDiscountValue] = useState(0);
@@ -63,7 +78,7 @@ export default function SalonPOS() {
 
   const [tipAmount, setTipAmount] = useState(0);
 
-  // ── ÉTATS IMPRESSION THERMIQUE ──
+  // Impression Thermique 80mm
   const [printData, setPrintData] = useState(null);
   const [printTrigger, setPrintTrigger] = useState(0);
 
@@ -98,6 +113,15 @@ export default function SalonPOS() {
     fetchData();
   }, []);
 
+  // Sauvegarde automatique du panier et des attentes
+  useEffect(() => {
+    localStorage.setItem("vsp_salon_cart", JSON.stringify(cart));
+  }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem("vsp_salon_held_orders", JSON.stringify(heldOrders));
+  }, [heldOrders]);
+
   const handleAddProduct = (item) => {
     setCart((prev) => {
       const existing = prev.find(
@@ -130,7 +154,7 @@ export default function SalonPOS() {
 
   const handleClearCart = () => {
     if (cart.length === 0 && tipAmount === 0) return;
-    if (window.confirm("Vider la caisse en cours ?")) {
+    if (window.confirm("Vider la vente en cours ?")) {
       setCart([]);
       setDiscountType(null);
       setDiscountValue(0);
@@ -139,7 +163,67 @@ export default function SalonPOS() {
     }
   };
 
-  // Sous-totaux
+  // ── GESTION DE LA MISE EN ATTENTE (HOLD / RECALL) ──
+  const handleHoldOrder = () => {
+    if (cart.length === 0 && tipAmount === 0) return;
+
+    const timeString = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const newHold = {
+      holdId: Date.now(),
+      time: timeString,
+      items: [...cart],
+      selectedBarber,
+      discountType,
+      discountValue,
+      tipAmount,
+      total: finalTotal + tipAmount,
+    };
+
+    setHeldOrders([...heldOrders, newHold]);
+    setCart([]);
+    setDiscountType(null);
+    setDiscountValue(0);
+    setSelectedBarber("");
+    setTipAmount(0);
+    toast.success("Vente mise en attente !");
+  };
+
+  const handleRestoreRequest = () => {
+    if (heldOrders.length === 0) return;
+    if (cart.length > 0)
+      return toast.error("Videz ou finalisez d'abord la vente actuelle !");
+
+    if (heldOrders.length === 1) {
+      executeRestore(heldOrders[0]);
+    } else {
+      setIsHoldModalOpen(true);
+    }
+  };
+
+  const executeRestore = (order) => {
+    setCart(order.items || []);
+    setSelectedBarber(order.selectedBarber || "");
+    setDiscountType(order.discountType || null);
+    setDiscountValue(order.discountValue || 0);
+    setTipAmount(order.tipAmount || 0);
+
+    setHeldOrders(heldOrders.filter((h) => h.holdId !== order.holdId));
+    setIsHoldModalOpen(false);
+    toast.success("Vente rappelée !");
+  };
+
+  const executeDiscardHold = (holdId) => {
+    if (!window.confirm("Supprimer définitivement cette attente ?")) return;
+    const remaining = heldOrders.filter((h) => h.holdId !== holdId);
+    setHeldOrders(remaining);
+    if (remaining.length === 0) setIsHoldModalOpen(false);
+  };
+
+  // ── CALCULS FINANCIERS ──
   const subTotal = cart.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0,
@@ -150,23 +234,58 @@ export default function SalonPOS() {
   else if (discountType === "amount") discountAmount = discountValue;
   const finalTotal = Math.max(0, subTotal - discountAmount);
 
-  // ── DÉTECTION DU CONTENU DU PANIER ──
   const serviceItems = cart.filter((i) => i.type === "service");
   const retailProducts = cart.filter((i) => i.type === "salon_product");
   const cafeItems = cart.filter((i) => i.type === "cafe_product");
 
-  // RÈGLE MÉTIER : Un coiffeur est OBLIGATOIRE SEULEMENT SI :
-  // 1. Il y a une prestation de coupe (service) dans le panier
-  // OU 2. Un pourboire a été renseigné
+  // Règle métier : Coiffeur requis SEULEMENT si coupe ou pourboire
   const isBarberRequired = serviceItems.length > 0 || tipAmount > 0;
 
-  // --- CHECKOUT LOGIC & IMPRESSION ---
-  const handleCheckout = async () => {
+  // ── IMPRESSION SEULE (SANS ENCAISSER / SANS TOUCHER À LA CAISSE) ──
+  const handlePrintOnly = () => {
+    if (cart.length === 0) return toast.error("Le panier est vide.");
+
+    const selectedBarberObj = barbers.find(
+      (b) => b.id.toString() === selectedBarber?.toString(),
+    );
+
+    setPrintData({
+      ticketId: "NOTE-PROVISOIRE",
+      clientName: "Client Comptoir (Note)",
+      barber: selectedBarberObj ? selectedBarberObj.name : "Salon VSP",
+      service:
+        serviceItems.length > 0
+          ? serviceItems.map((s) => s.name).join(" + ")
+          : "Note Produits",
+      haircutPrice: serviceItems.reduce((s, i) => s + i.price * i.quantity, 0),
+      items: [
+        ...retailProducts.map((p) => ({
+          name: p.name,
+          price: p.price,
+          quantity: p.quantity,
+        })),
+        ...cafeItems.map((c) => ({
+          name: c.name,
+          price: c.price,
+          quantity: c.quantity,
+        })),
+      ],
+      discountAmount,
+      tipAmount,
+      paidAmount: finalTotal + tipAmount,
+      grandTotal: finalTotal + tipAmount,
+    });
+    setPrintTrigger((prev) => prev + 1);
+    toast.success("Impression de la note seule envoyée !");
+  };
+
+  // ── ENCAISSEMENT : AVEC OU SANS IMPRESSION ──
+  const handleCheckout = async (shouldPrint = true) => {
     if (cart.length === 0 && tipAmount === 0) return;
 
     if (isBarberRequired && !selectedBarber) {
       return toast.error(
-        "Veuillez sélectionner le Coiffeur pour la coupe ou le pourboire.",
+        "Veuillez assigner un coiffeur pour la coupe ou le pourboire.",
       );
     }
 
@@ -179,7 +298,9 @@ export default function SalonPOS() {
         ? selectedBarberObj.name
         : "Boutique Salon";
 
-      // ── CAS A : UNIQUEMENT DES ARTICLES CAFÉ ──
+      let ticketRef = "DIRECT";
+
+      // CAS 1 : UNIQUEMENT DES BOISSONS CAFÉ
       if (
         serviceItems.length === 0 &&
         retailProducts.length === 0 &&
@@ -195,27 +316,9 @@ export default function SalonPOS() {
             quantity: i.quantity,
           })),
         });
-
-        // Déclencher le ticket de caisse
-        setPrintData({
-          ticketId: `CMD-${res.data.id}`,
-          clientName: "Client Comptoir",
-          barber: "Cafétéria",
-          service: "Vente Cafétéria",
-          haircutPrice: 0,
-          items: cafeItems.map((c) => ({
-            name: c.name,
-            price: c.price,
-            quantity: c.quantity,
-          })),
-          discountAmount,
-          tipAmount: 0,
-          paidAmount: finalTotal,
-          grandTotal: finalTotal,
-        });
-        setPrintTrigger((prev) => prev + 1);
+        ticketRef = `CMD-${res.data.id}`;
       } else {
-        // ── CAS B : VENTE SALON (PRODUITS, COUPES OU MIXTE) ──
+        // CAS 2 : COIFFURE, PRODUITS BOUTIQUE OU MIXTE
         const serviceNameString =
           [
             ...serviceItems.map((s) => `${s.quantity}x ${s.name}`),
@@ -231,7 +334,7 @@ export default function SalonPOS() {
         const res = await api.post("/tickets/manual-pay", {
           clientName: "Client Comptoir",
           phone: "",
-          barberId: selectedBarber ? Number(selectedBarber) : undefined, // Backend assigne Boutique Salon automatiquement
+          barberId: selectedBarber ? Number(selectedBarber) : undefined,
           serviceName: serviceNameString,
           totalPrice: finalSalonPrice,
           originalPrice: salonSubTotal,
@@ -247,23 +350,35 @@ export default function SalonPOS() {
           paidAmount: finalTotal + tipAmount,
         });
 
-        // Déclencher le ticket de caisse imprimé
+        ticketRef = res.data.ticket?.id || "DIRECT";
+      }
+
+      // IMPRESSION THERMIQUE SI DEMANDÉE
+      if (shouldPrint) {
         setPrintData({
-          ticketId: res.data.ticket?.id || "DIRECT",
-          queueNumber: res.data.ticket?.queueNumber || 0,
+          ticketId: ticketRef,
           clientName: "Client Comptoir",
           barber: activeBarberName,
           service:
-            serviceItems.length > 0 ? serviceNameString : "Produits Boutique",
-          haircutPrice: serviceItems.length > 0 ? finalSalonPrice : 0,
+            serviceItems.length > 0
+              ? serviceItems.map((s) => s.name).join(" + ")
+              : "Produits Boutique",
+          haircutPrice:
+            serviceItems.length > 0
+              ? Math.max(
+                  0,
+                  serviceItems.reduce((s, i) => s + i.price * i.quantity, 0) -
+                    discountAmount,
+                )
+              : 0,
           items: [
             ...retailProducts.map((p) => ({
-              name: `${p.name} (Boutique)`,
+              name: p.name,
               price: p.price,
               quantity: p.quantity,
             })),
             ...cafeItems.map((c) => ({
-              name: `${c.name} (Café)`,
+              name: c.name,
               price: c.price,
               quantity: c.quantity,
             })),
@@ -277,10 +392,12 @@ export default function SalonPOS() {
       }
 
       toast.success(
-        `Encaissement de DZD ${(finalTotal + tipAmount).toFixed(2)} validé ! Impression en cours...`,
+        shouldPrint
+          ? `Vente de DZD ${(finalTotal + tipAmount).toFixed(2)} encaissée avec reçu !`
+          : `Vente de DZD ${(finalTotal + tipAmount).toFixed(2)} encaissée en caisse !`,
       );
 
-      // Reset
+      // Réinitialisation
       setCart([]);
       setDiscountType(null);
       setDiscountValue(0);
@@ -310,7 +427,7 @@ export default function SalonPOS() {
     setIsNumpadOpen(false);
   };
 
-  // Afficheur Client Arrière (COM2)
+  // Synchronisation Afficheur Client Arrière (COM2)
   useEffect(() => {
     const totalToDisplay =
       cart.length > 0 || tipAmount > 0 ? finalTotal + tipAmount : 0;
@@ -330,16 +447,16 @@ export default function SalonPOS() {
   const activeGridItems = catalog[activeTab] || [];
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -m-8 overflow-hidden bg-main">
+    <div className="flex h-[calc(100vh-5rem)] -m-8 overflow-hidden bg-main select-none">
       {/* ═══════════════════════════════════════════════════════
-          GAUCHE : GRILLE DE MENU TACTILE
+          GAUCHE : GRILLE DE MENU TACTILE (2/3)
       ═══════════════════════════════════════════════════════ */}
       <div className="w-2/3 h-full flex flex-col border-r border-subtle">
-        {/* Onglets (Prestations, Produits, Café) */}
-        <div className="flex overflow-x-auto border-b border-subtle bg-surface p-3 gap-2 shrink-0 shadow-sm">
+        {/* Onglets */}
+        <div className="flex overflow-x-auto border-b border-subtle bg-surface p-3 gap-2 shrink-0 shadow-sm hide-scrollbar">
           {[
             { id: "services", label: "Prestations Coiffure" },
-            { id: "products", label: "Produits Salon (Boutique)" },
+            { id: "products", label: "Produits Boutique" },
             { id: "cafe", label: "Café & Snacks" },
           ].map((tab) => {
             const theme = TAB_COLORS[tab.id];
@@ -348,8 +465,9 @@ export default function SalonPOS() {
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-6 py-4 font-bold uppercase tracking-widest text-xs transition-all duration-200 border rounded-none ${
+                className={`flex items-center gap-2 px-6 py-4 font-bold uppercase tracking-widest text-xs transition-all duration-200 border rounded-none cursor-pointer ${
                   isActive ? theme.active : theme.base
                 }`}
               >
@@ -359,7 +477,7 @@ export default function SalonPOS() {
           })}
         </div>
 
-        {/* Grille des articles sans photo (style caisse tactile rapide) */}
+        {/* Grille tactile des articles */}
         <div className="flex-1 overflow-y-auto p-4 bg-main">
           {activeGridItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-t-muted opacity-50">
@@ -373,8 +491,9 @@ export default function SalonPOS() {
               {activeGridItems.map((item) => (
                 <button
                   key={`${item.type}-${item.id}`}
+                  type="button"
                   onClick={() => handleAddProduct(item)}
-                  className="bg-surface border border-subtle hover:border-brand hover:bg-brand/5 p-3.5 flex flex-col justify-between text-left transition-all active:scale-[0.98] shadow-sm group min-h-[90px] relative overflow-hidden rounded-none"
+                  className="bg-surface border border-subtle hover:border-brand hover:bg-brand/5 p-3.5 flex flex-col justify-between text-left transition-all active:scale-[0.98] shadow-sm group min-h-[92px] relative overflow-hidden rounded-none cursor-pointer"
                 >
                   <div
                     className={`absolute top-0 left-0 w-1.5 h-full ${
@@ -415,41 +534,71 @@ export default function SalonPOS() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════
-          DROITE : TICKET DE CAISSE (PANIER)
+          DROITE : TICKET DE CAISSE (PANIER 1/3)
       ═══════════════════════════════════════════════════════ */}
       <div className="w-1/3 h-full flex flex-col bg-surface shadow-2xl z-10">
-        {/* En-tête du Panier */}
-        <div className="p-4 border-b border-subtle bg-main shrink-0 space-y-3">
+        {/* Header avec Attente, Rappeler et Vider */}
+        <div className="p-3 border-b border-subtle bg-main shrink-0 space-y-2.5">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-t-main uppercase tracking-widest leading-none">
+            <h2 className="text-lg font-bold text-t-main uppercase tracking-widest leading-none">
               Vente Directe
             </h2>
-            <button
-              onClick={handleClearCart}
-              disabled={cart.length === 0 && tipAmount === 0}
-              className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-none shadow-md transition-colors flex items-center gap-2"
-            >
-              <XOctagon size={14} /> Vider
-            </button>
+
+            {/* BOUTONS D'ATTENTE & VIDER (STYLE CAFÉ POS) */}
+            <div className="flex items-center gap-1.5">
+              {heldOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRestoreRequest}
+                  className="flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] uppercase rounded-none shadow-md relative"
+                  title="Rappeler une vente en attente"
+                >
+                  <ListRestart size={13} className="mr-1" /> Rappeler
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px] animate-pulse border border-white">
+                    {heldOrders.length}
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleHoldOrder}
+                disabled={cart.length === 0 && tipAmount === 0}
+                className="flex items-center px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] uppercase rounded-none shadow-md disabled:opacity-40"
+                title="Mettre en attente"
+              >
+                <PauseCircle size={13} className="mr-1" /> Attente
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearCart}
+                disabled={cart.length === 0 && tipAmount === 0}
+                className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded-none shadow-md disabled:opacity-40"
+                title="Vider le panier"
+              >
+                <XOctagon size={15} />
+              </button>
+            </div>
           </div>
 
-          {/* SÉLECTEUR DE COIFFEUR (OBLIGATOIRE UNIQUEMENT SI COUPE OU POURBOIRE) */}
+          {/* SÉLECTEUR DE COIFFEUR */}
           <div
-            className={`p-2.5 border transition-colors rounded-none ${
+            className={`p-2 border transition-colors rounded-none ${
               isBarberRequired
                 ? "bg-amber-500/10 border-amber-500/40"
                 : "bg-surface border-subtle"
             }`}
           >
-            <label className="block text-[9px] font-bold uppercase mb-1 px-1">
+            <label className="block text-[8px] font-bold uppercase mb-1 px-0.5">
               {isBarberRequired ? (
                 <span className="text-amber-400 flex items-center gap-1 font-bold">
-                  Coiffeur Assigné * (Requis pour la coupe / pourboire)
+                  Coiffeur Assigné * (Requis pour la coupe)
                 </span>
               ) : (
                 <span className="text-t-muted flex items-center gap-1">
-                  <Store size={11} /> Coiffeur (Optionnel — Vente Boutique Salon
-                  par défaut)
+                  <Store size={10} /> Coiffeur (Facultatif — Vente Boutique
+                  Salon)
                 </span>
               )}
             </label>
@@ -457,28 +606,30 @@ export default function SalonPOS() {
             <select
               value={selectedBarber}
               onChange={(e) => setSelectedBarber(e.target.value)}
-              className="w-full bg-main border border-subtle text-t-main px-3 py-2 text-xs font-bold uppercase focus:outline-none focus:border-brand rounded-none"
+              className="w-full bg-main border border-subtle text-t-main px-2.5 py-1.5 text-xs font-bold uppercase focus:outline-none focus:border-brand rounded-none"
             >
               <option value="">
                 {isBarberRequired
-                  ? "-- Sélectionner un Coiffeur Obligatoire --"
+                  ? "-- Choisir un Coiffeur Obligatoire --"
                   : "-- Aucun (Vente Boutique 100% Salon) --"}
               </option>
-              {barbers.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} {b.poste ? `(Poste ${b.poste})` : ""}
-                </option>
-              ))}
+              {barbers
+                .filter((b) => b.isPresent !== false)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} {b.poste ? `(Poste ${b.poste})` : ""}
+                  </option>
+                ))}
             </select>
           </div>
         </div>
 
-        {/* Lignes d'articles dans le panier */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-main/50">
+        {/* Lignes du panier */}
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 bg-main/40">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-t-muted opacity-50">
-              <Banknote size={48} className="mb-4" />
-              <span className="font-bold uppercase tracking-widest text-sm">
+            <div className="h-full flex flex-col items-center justify-center text-t-muted opacity-40">
+              <Banknote size={44} className="mb-2" />
+              <span className="font-bold uppercase tracking-widest text-xs">
                 Panier Vide
               </span>
             </div>
@@ -486,12 +637,12 @@ export default function SalonPOS() {
             cart.map((item) => (
               <div
                 key={`${item.type}-${item.id}`}
-                className="bg-surface border-2 border-subtle p-2 flex justify-between items-stretch shadow-sm rounded-none"
+                className="bg-surface border border-subtle p-2 flex justify-between items-center shadow-sm rounded-none"
               >
-                <div className="flex-1 pr-2 flex flex-col justify-center">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex-1 pr-2 min-w-0">
+                  <div className="flex items-center gap-1 mb-0.5">
                     <span
-                      className={`text-[8px] font-bold uppercase px-1 py-0.2 ${
+                      className={`text-[7px] font-bold uppercase px-1 ${
                         item.type === "service"
                           ? "bg-blue-500/20 text-blue-400"
                           : item.type === "salon_product"
@@ -505,34 +656,36 @@ export default function SalonPOS() {
                           ? "Boutique"
                           : "Café"}
                     </span>
-                    <p className="font-bold text-t-main text-xs uppercase tracking-wide leading-tight line-clamp-1">
+                    <p className="font-bold text-t-main text-xs uppercase truncate">
                       {item.name}
                     </p>
                   </div>
-                  <p className="text-brand font-mono text-sm font-bold mt-1">
+                  <p className="text-brand font-mono text-xs font-bold">
                     {(item.price * item.quantity).toFixed(2)} DA
                   </p>
                 </div>
 
                 <div className="flex items-center bg-main border border-subtle shrink-0">
                   <button
+                    type="button"
                     onClick={() => handleUpdateQuantity(item, -1)}
-                    className="w-10 h-10 flex items-center justify-center text-t-main bg-surface hover:bg-subtle border-r border-subtle active:scale-95 rounded-none"
+                    className="w-8 h-8 flex items-center justify-center text-t-main hover:bg-subtle active:scale-95 rounded-none"
                   >
                     {item.quantity === 1 ? (
-                      <Trash2 size={16} className="text-red-500" />
+                      <Trash2 size={13} className="text-red-500" />
                     ) : (
-                      <Minus size={16} />
+                      <Minus size={13} />
                     )}
                   </button>
-                  <span className="font-mono font-bold text-t-main w-10 text-center text-base">
+                  <span className="font-mono font-bold text-t-main w-8 text-center text-xs">
                     {item.quantity}
                   </span>
                   <button
+                    type="button"
                     onClick={() => handleUpdateQuantity(item, 1)}
-                    className="w-10 h-10 flex items-center justify-center text-t-main bg-surface hover:bg-subtle border-l border-subtle active:scale-95 rounded-none"
+                    className="w-8 h-8 flex items-center justify-center text-t-main hover:bg-subtle active:scale-95 rounded-none"
                   >
-                    <Plus size={16} />
+                    <Plus size={13} />
                   </button>
                 </div>
               </div>
@@ -540,144 +693,162 @@ export default function SalonPOS() {
           )}
         </div>
 
-        {/* Footer Encaissement */}
-        <div className="p-4 border-t-4 border-subtle bg-surface shrink-0">
-          <div className="flex justify-between items-center mb-3">
-            <div className="flex gap-2">
+        {/* Footer Caisse & Boutons d'Action */}
+        <div className="p-3 border-t-2 border-subtle bg-surface shrink-0 space-y-2.5">
+          {/* Remises & Sous-total */}
+          <div className="flex justify-between items-center">
+            <div className="flex gap-1.5">
               {!discountType ? (
                 <>
                   <button
+                    type="button"
                     onClick={() => {
                       setNumpadTarget("discount-percent");
                       setNumpadValue("0");
                       setIsNumpadOpen(true);
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white text-[10px] font-bold uppercase hover:bg-blue-500 active:scale-95 shadow-md rounded-none"
+                    className="px-2.5 py-1 bg-blue-600 text-white text-[9px] font-bold uppercase rounded-none hover:bg-blue-500"
                   >
-                    - Remise %
+                    % Remise
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       setNumpadTarget("discount-amount");
                       setNumpadValue("0");
                       setIsNumpadOpen(true);
                     }}
-                    className="px-4 py-2 bg-slate-700 text-white text-[10px] font-bold uppercase hover:bg-slate-600 active:scale-95 shadow-md rounded-none"
+                    className="px-2.5 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase rounded-none hover:bg-slate-600"
                   >
-                    - Remise DZD
+                    DA Remise
                   </button>
                 </>
               ) : (
                 <button
+                  type="button"
                   onClick={() => {
                     setDiscountType(null);
                     setDiscountValue(0);
                   }}
-                  className="px-4 py-2 bg-red-600 text-white text-[10px] font-bold uppercase shadow-md hover:bg-red-500 flex items-center gap-1 rounded-none"
+                  className="px-2.5 py-1 bg-red-600 text-white text-[9px] font-bold uppercase rounded-none flex items-center gap-1"
                 >
-                  <Trash2 size={12} /> Annuler Remise
+                  <Trash2 size={11} /> Annuler ({discountAmount.toFixed(0)} DA)
                 </button>
               )}
             </div>
-            <div className="text-right">
-              <span className="text-[9px] uppercase font-bold text-t-muted block">
-                Sous-total
-              </span>
-              <span
-                className={`font-mono font-bold text-sm ${
-                  discountType ? "line-through text-t-muted" : "text-t-main"
-                }`}
-              >
-                {subTotal.toFixed(2)}
-              </span>
-            </div>
+            <span className="font-mono text-xs text-t-muted">
+              Sous-total:{" "}
+              <strong className="text-t-main">{subTotal.toFixed(2)}</strong>
+            </span>
           </div>
 
-          {discountType && (
-            <div className="flex justify-between items-center bg-amber-500 text-white p-2 mb-3 shadow-inner rounded-none">
-              <span className="text-[10px] uppercase font-bold tracking-widest">
-                Remise{" "}
-                {discountType === "percent" ? `(${discountValue}%)` : "(Fixe)"}
-              </span>
-              <span className="font-mono font-bold text-base">
-                - {discountAmount.toFixed(2)}
-              </span>
-            </div>
-          )}
-
           {/* Pourboires Coiffeur */}
-          <div className="mb-3">
-            <div className="flex justify-between items-center mb-1 px-1">
-              <span className="text-[9px] uppercase font-bold text-t-muted">
-                Pourboire Coiffeur
-              </span>
-              {tipAmount > 0 && (
-                <span className="font-mono font-bold text-green-500 text-xs">
-                  + DZD {tipAmount.toFixed(2)}
-                </span>
-              )}
-            </div>
-            <div className="flex gap-2">
+          <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-subtle/50">
+            <span className="text-[9px] font-bold uppercase text-t-muted shrink-0">
+              Tips Coiffeur :
+            </span>
+            <div className="flex gap-1 flex-1 justify-end">
               <button
-                onClick={() => setTipAmount((prev) => prev + 100)}
-                className="flex-1 py-2 bg-main border border-subtle hover:border-green-500 text-t-main hover:text-green-500 active:scale-95 text-[10px] uppercase font-bold rounded-none"
+                type="button"
+                onClick={() => setTipAmount((p) => p + 100)}
+                className="px-2 py-1 bg-main border border-subtle text-[9px] font-bold rounded-none hover:text-green-500"
               >
                 +100
               </button>
               <button
-                onClick={() => setTipAmount((prev) => prev + 200)}
-                className="flex-1 py-2 bg-main border border-subtle hover:border-green-500 text-t-main hover:text-green-500 active:scale-95 text-[10px] uppercase font-bold rounded-none"
+                type="button"
+                onClick={() => setTipAmount((p) => p + 200)}
+                className="px-2 py-1 bg-main border border-subtle text-[9px] font-bold rounded-none hover:text-green-500"
               >
                 +200
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setNumpadTarget("tip");
                   setNumpadValue("0");
                   setIsNumpadOpen(true);
                 }}
-                className="flex-1 py-2 bg-main border border-subtle hover:border-brand text-t-main active:scale-95 text-[10px] uppercase font-bold rounded-none"
+                className="px-2 py-1 bg-main border border-subtle text-[9px] font-bold rounded-none hover:text-brand"
               >
                 Autre
               </button>
               {tipAmount > 0 && (
                 <button
+                  type="button"
                   onClick={() => setTipAmount(0)}
-                  className="px-3 bg-red-600 text-white hover:bg-red-500 active:scale-95 shadow-md rounded-none"
+                  className="p-1 bg-red-600 text-white rounded-none"
+                  title="Effacer pourboire"
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={11} />
                 </button>
               )}
             </div>
           </div>
 
           {/* Écran Digital LED */}
-          <div className="bg-[#0a0a0a] p-4 border-4 border-slate-800 rounded-none flex justify-between items-center shadow-inner mb-4">
-            <span className="text-slate-400 font-bold uppercase tracking-widest text-xs">
-              Total à Payer
+          <div className="bg-[#0a0a0a] p-3 border-2 border-slate-800 rounded-none flex justify-between items-center shadow-inner">
+            <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+              Total Net
             </span>
-            <span className="text-3xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)] tracking-wider">
-              {(finalTotal + tipAmount).toFixed(2)}
+            <span className="text-2xl font-mono font-black text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)] tracking-wider">
+              {(finalTotal + tipAmount).toFixed(2)} DA
             </span>
           </div>
 
-          {/* Bouton d'encaissement avec impulsion thermique */}
-          <Button
-            variant="success"
-            onClick={handleCheckout}
-            disabled={(cart.length === 0 && tipAmount === 0) || isProcessing}
-            className="w-full py-5 flex items-center justify-center gap-2 text-sm font-bold tracking-widest uppercase shadow-xl disabled:opacity-50 rounded-none"
-          >
-            <Banknote size={24} />
-            {isProcessing ? "Encaissement..." : "ENCAISSER & IMPRIMER TICKET"}
-          </Button>
+          {/* ═══════════════════════════════════════════════════════
+              LES 3 BOUTONS ERGONOMIQUES (PRINCIPAL + 2 SECONDAIRES)
+          ═══════════════════════════════════════════════════════ */}
+          <div className="grid grid-cols-12 gap-1.5 h-14">
+            {/* 1. GRAND BOUTON PRINCIPAL GAUCHE : ENCAISSER & TICKET (8 Cols) */}
+            <button
+              type="button"
+              onClick={() => handleCheckout(true)}
+              disabled={(cart.length === 0 && tipAmount === 0) || isProcessing}
+              className="col-span-8 bg-green-600 hover:bg-green-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg disabled:opacity-40 rounded-none cursor-pointer active:scale-[0.98] transition-all"
+              title="Encaisser en espèces et imprimer le ticket thermique 80mm"
+            >
+              <Banknote size={18} />
+              <Printer size={15} />
+              <span>{isProcessing ? "..." : "ENCAISSER & TICKET"}</span>
+            </button>
+
+            {/* 2 & 3. DEUX BOUTONS SECONDAIRES EMPILÉS À DROITE (4 Cols) */}
+            <div className="col-span-4 flex flex-col gap-1.5">
+              {/* Encaisser SEUL (sans ticket) */}
+              <button
+                type="button"
+                onClick={() => handleCheckout(false)}
+                disabled={
+                  (cart.length === 0 && tipAmount === 0) || isProcessing
+                }
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-[9px] uppercase tracking-tighter flex items-center justify-center gap-1.5 rounded-none shadow-sm disabled:opacity-40"
+                title="Encaisser dans le tiroir sans imprimer de ticket"
+              >
+                <Banknote size={13} className="text-green-400" />
+                <span>Encaisser</span>
+              </button>
+
+              {/* Imprimer SEUL (sans encaisser) */}
+              <button
+                type="button"
+                onClick={handlePrintOnly}
+                disabled={cart.length === 0}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-[9px] uppercase tracking-tighter flex items-center justify-center gap-1.5 rounded-none shadow-sm disabled:opacity-40"
+                title="Imprimer un ticket provisoire sans toucher à la caisse"
+              >
+                <Printer size={13} className="text-amber-400" />
+                <span>Ticket</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ── MODALE NUMPAD ── */}
       <Modal isOpen={isNumpadOpen} onClose={() => setIsNumpadOpen(false)}>
         <div className="bg-slate-950 rounded-none overflow-hidden border-2 border-slate-800 shadow-2xl">
-          <div className="px-6 py-5 border-b border-slate-800 text-center bg-slate-900/60">
+          <div className="px-6 py-4 border-b border-slate-800 text-center bg-slate-900/60">
             <h3 className="text-xs font-bold uppercase tracking-widest text-amber-500">
               {numpadTarget === "tip"
                 ? "Saisir le Pourboire"
@@ -695,7 +866,76 @@ export default function SalonPOS() {
         </div>
       </Modal>
 
-      {/* ── MOTEUR D'IMPRESSION SILENCIEUSE 80MM ── */}
+      {/* ── MODALE DES COMMANDES EN ATTENTE ── */}
+      <Modal isOpen={isHoldModalOpen} onClose={() => setIsHoldModalOpen(false)}>
+        <div className="p-6 bg-slate-950 max-h-[80vh] flex flex-col rounded-none">
+          <h3 className="text-sm font-serif font-bold text-amber-500 uppercase tracking-widest text-center border-b border-subtle pb-3 mb-4 flex items-center justify-center gap-2">
+            <Clock size={16} /> Ventes en Attente ({heldOrders.length})
+          </h3>
+
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {heldOrders.map((order, idx) => (
+              <div
+                key={order.holdId}
+                className="bg-surface border border-subtle p-3.5 shadow-sm relative overflow-hidden rounded-none"
+              >
+                <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+
+                <div className="flex justify-between items-start mb-2 border-b border-subtle/40 pb-1.5">
+                  <div>
+                    <p className="font-bold text-t-main text-xs uppercase">
+                      Attente #{idx + 1}
+                    </p>
+                    <p className="text-[9px] text-t-muted font-mono">
+                      Mise en pause à {order.time}
+                    </p>
+                  </div>
+                  <p className="text-base font-mono font-bold text-brand">
+                    DZD {order.total.toFixed(2)}
+                  </p>
+                </div>
+
+                <p className="text-[9px] text-t-muted uppercase truncate mb-3">
+                  {order.items
+                    ?.map((i) => `${i.quantity}x ${i.name}`)
+                    .join(" • ")}
+                </p>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => executeDiscardHold(order.holdId)}
+                    className="py-2 text-[9px] text-red-500 border-red-500/30 hover:bg-red-500/10 rounded-none"
+                  >
+                    Supprimer
+                  </Button>
+                  <Button
+                    variant="primary"
+                    fullWidth
+                    onClick={() => executeRestore(order)}
+                    className="py-2 text-[9px] rounded-none shadow-md flex items-center justify-center gap-1.5"
+                  >
+                    <Play size={12} /> Reprendre la Vente
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-subtle">
+            <Button
+              variant="outline"
+              fullWidth
+              onClick={() => setIsHoldModalOpen(false)}
+              className="py-2.5 text-xs font-bold rounded-none"
+            >
+              Fermer
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── MOTEUR D'IMPRESSION SILENCIEUX 80MM ── */}
       <ThermalReceipt
         type="receipt"
         data={printData}

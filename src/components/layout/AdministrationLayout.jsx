@@ -12,23 +12,19 @@ import {
   Settings,
   ShoppingCart,
   Coffee,
-  PackageSearch,
-  Truck,
   BadgeAlert,
   Wallet,
   Key,
   LogOut,
   LineChart,
-  TrendingDown,
   Scissors,
-  Store,
   ShieldCheck,
-  List, // <-- NOUVEAU
-  FileText, // <-- NOUVEAU
-  PieChart, // <-- NOUVEAU
-  Scale, // <-- NOUVEAU
+  List,
+  FileText,
+  PieChart,
+  Scale,
 } from "lucide-react";
-import logo from "../../assets/images/logo-transparent.png";
+import logo from "../../assets/images/logo_no_bg.png";
 
 export default function AdministrationLayout({ department = "coiffure" }) {
   const location = useLocation();
@@ -37,7 +33,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
   const role = user?.role || "receptionist";
 
   // ══════════════════════════════════════════════════════════════
-  // ── 1. MENU COIFFURE HIÉRARCHISÉ ──
+  // ── 1. MENU COIFFURE ÉPURÉ (SANS CHARGES OPEX SÉPARÉES) ──
   // ══════════════════════════════════════════════════════════════
   const coiffureNavItems = [
     {
@@ -63,7 +59,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
     },
     {
       id: "caisse-rapide",
-      label: "Vente Directe",
+      label: "Caisse Rapide", // <-- UNIFIÉ
       icon: ShoppingCart,
       path: "/administration/coiffure/caisse-rapide",
       roles: ["admin", "receptionist"],
@@ -83,15 +79,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       roles: ["admin", "receptionist"],
     },
 
-    // ── CHARGES SORTIES AU 1ER NIVEAU ──
-    {
-      id: "charges",
-      label: "Charges (OPEX)",
-      icon: TrendingDown,
-      path: "/administration/coiffure/charges",
-      roles: ["admin", "receptionist"],
-    },
-
+    // ── GESTION SALON ──
     {
       id: "group-salon",
       label: "Gestion Salon",
@@ -100,17 +88,10 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       children: [
         {
           id: "menu",
-          label: "Catalogue Prestations",
+          label: "Prestations & Produits",
           icon: Coffee,
           path: "/administration/coiffure/menu",
           roles: ["admin"],
-        },
-        {
-          id: "stock",
-          label: "Gestion du Stock",
-          icon: PackageSearch,
-          path: "/administration/coiffure/stock",
-          roles: ["admin", "receptionist"],
         },
         {
           id: "postes",
@@ -129,7 +110,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       ],
     },
 
-    // ── NOUVEAU GROUPE FINANCES & BILAN ──
+    // ── FINANCES & BILAN ──
     {
       id: "group-finance",
       label: "Finances & Bilan",
@@ -167,6 +148,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       ],
     },
 
+    // ── ADMINISTRATION ──
     {
       id: "group-admin",
       label: "Administration",
@@ -192,7 +174,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
   ];
 
   // ══════════════════════════════════════════════════════════════
-  // ── 2. MENU CAFÉ HIÉRARCHISÉ ──
+  // ── 2. MENU CAFÉ ÉPURÉ (SANS CHARGES OPEX SÉPARÉES) ──
   // ══════════════════════════════════════════════════════════════
   const cafeNavItems = [
     {
@@ -204,7 +186,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
     },
     {
       id: "commandes",
-      label: "Point de Vente (POS)",
+      label: "Caisse Rapide", // <-- UNIFIÉ
       icon: ShoppingCart,
       path: "/administration/cafe/commandes",
       roles: ["admin", "receptionist"],
@@ -217,19 +199,11 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       roles: ["admin", "receptionist"],
     },
 
-    // ── CHARGES SORTIES AU 1ER NIVEAU ──
+    // ── MENU & BOISSONS ──
     {
-      id: "charges",
-      label: "Charges (OPEX)",
-      icon: TrendingDown,
-      path: "/administration/cafe/charges",
-      roles: ["admin", "receptionist"],
-    },
-
-    {
-      id: "group-cafe-stock",
-      label: "Stocks & Articles",
-      icon: Store,
+      id: "group-cafe-menu",
+      label: "Menu & Boissons",
+      icon: Coffee,
       roles: ["admin"],
       children: [
         {
@@ -241,29 +215,15 @@ export default function AdministrationLayout({ department = "coiffure" }) {
         },
         {
           id: "categories",
-          label: "Catégories & Marques",
+          label: "Catégories",
           icon: BadgeAlert,
           path: "/administration/cafe/categories",
-          roles: ["admin"],
-        },
-        {
-          id: "stock",
-          label: "Gestion du Stock",
-          icon: PackageSearch,
-          path: "/administration/cafe/stock",
-          roles: ["admin"],
-        },
-        {
-          id: "fournisseurs",
-          label: "Grossistes",
-          icon: Truck,
-          path: "/administration/cafe/fournisseurs",
           roles: ["admin"],
         },
       ],
     },
 
-    // ── NOUVEAU GROUPE FINANCES & BILAN ──
+    // ── FINANCES & BILAN CAFÉ ──
     {
       id: "group-cafe-finance",
       label: "Finances & Bilan",
@@ -339,7 +299,7 @@ export default function AdministrationLayout({ department = "coiffure" }) {
         if (found) return found.label;
       }
     }
-    return "VSP Admin";
+    return "Salon VSP";
   };
 
   return (
@@ -347,9 +307,9 @@ export default function AdministrationLayout({ department = "coiffure" }) {
       <Sidebar logo={logo} navItems={filteredNavItems} appMode={department} />
 
       <div className="flex-1 flex flex-col h-full relative min-w-0">
-        <header className="h-20 bg-surface border-b border-subtle px-8 flex items-center justify-between shrink-0 z-40 transition-colors duration-100 shadow-sm">
+        <header className="h-20 bg-surface border-b border-subtle px-8 flex items-center justify-between shrink-0 z-40 shadow-sm">
           <div>
-            <h2 className="text-xl font-bold uppercase tracking-widest text-brand transition-colors duration-100">
+            <h2 className="text-xl font-bold uppercase tracking-widest text-brand">
               {getCurrentPageTitle()}
             </h2>
             <p className="text-[10px] text-t-muted uppercase tracking-widest font-bold mt-1">

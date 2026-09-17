@@ -13,6 +13,8 @@ import {
   Check,
   X,
   Search,
+  Calendar,
+  User,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import api from "../../utils/api";
@@ -39,12 +41,12 @@ export default function CaisseManager() {
   const [adjType, setAdjType] = useState("out");
   const [adjAmount, setAdjAmount] = useState("");
   const [adjMotif, setAdjMotif] = useState("");
-  const [adjDepartment, setAdjDepartment] = useState("coiffure"); // <-- "coiffure" ou "cafe"
+  const [adjDepartment, setAdjDepartment] = useState("coiffure");
 
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [reportedCash, setReportedCash] = useState("");
 
-  // Modale Audit (Visionner une caisse passée OU actuelle)
+  // Modale Audit
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [tillToAudit, setTillToAudit] = useState(null);
 
@@ -55,6 +57,8 @@ export default function CaisseManager() {
   const [printTrigger, setPrintTrigger] = useState(0);
 
   const [pendingPayouts, setPendingPayouts] = useState([]);
+
+  const [startingCashProvider, setStartingCashProvider] = useState("commune"); // 'commune', 'coiffure', 'cafe'
 
   const loadData = async (isInitial = false) => {
     if (isInitial) setIsLoading(true);
@@ -87,6 +91,7 @@ export default function CaisseManager() {
     try {
       await api.post("/caisse/open", {
         startingCash: parseFloat(startingCash),
+        startingCashProvider,
         username: user?.username,
       });
       toast.success("Caisse ouverte pour la journée !");
@@ -96,7 +101,6 @@ export default function CaisseManager() {
       toast.error("Échec de l'ouverture.");
     }
   };
-
   const handleApprovePayout = async (payout) => {
     if (
       !window.confirm(
@@ -141,7 +145,7 @@ export default function CaisseManager() {
         amount: parseFloat(adjAmount),
         type: adjType,
         motif: adjMotif,
-        department: adjDepartment, // <-- TRANSMET LE PÔLE SÉLECTIONNÉ
+        department: adjDepartment,
       });
       toast.success(
         adjType === "in" ? "Apport enregistré" : "Dépense enregistrée",
@@ -149,7 +153,7 @@ export default function CaisseManager() {
       setIsAdjustmentModalOpen(false);
       setAdjAmount("");
       setAdjMotif("");
-      setAdjDepartment("coiffure"); // Réinitialise
+      setAdjDepartment("coiffure");
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.message || "Erreur de caisse");
@@ -166,7 +170,7 @@ export default function CaisseManager() {
 
     if (Math.abs(differencePrevue) > 2000) {
       setConfirmMessage(
-        `Vous êtes sur le point de déclarer ${parsedReported} DA en caisse.\nCela génère un écart anormal de ${differencePrevue.toFixed(2)} DA !\n\nÊtes-vous sûr de ne pas avoir fait d'erreur de frappe ?`,
+        `Vous êtes sur le point de déclarer ${parsedReported} DA en caisse.\nCela génère un écart de ${differencePrevue.toFixed(2)} DA !\n\nConfirmez-vous ce comptage ?`,
       );
       setIsConfirmModalOpen(true);
     } else {
@@ -183,7 +187,7 @@ export default function CaisseManager() {
       const closedTill = res.data;
       const diff = closedTill.difference;
 
-      if (diff === 0) toast.success("Caisse parfaite !");
+      if (diff === 0) toast.success("Caisse parfaite (0.00 DA) !");
       else if (diff < 0)
         toast.error(`DÉFICIT de DZD ${Math.abs(diff).toFixed(2)}`, {
           duration: 5000,
@@ -218,7 +222,6 @@ export default function CaisseManager() {
     }
   };
 
-  // ── OUVRE LA FENÊTRE D'AUDIT ──
   const handleOpenAudit = (till) => {
     setTillToAudit(till);
     setIsAuditModalOpen(true);
@@ -233,17 +236,17 @@ export default function CaisseManager() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* 1. ÉTAT DE LA CAISSE ACTUELLE */}
+    <div className="space-y-6 select-none">
+      {/* ── 1. SESSION EN COURS ── */}
       {!currentTill ? (
-        <div className="bg-surface border border-red-500/20 p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-sm">
+        <div className="bg-surface border border-red-500/20 p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-sm rounded-none">
           <AlertTriangle className="w-16 h-16 text-red-500 animate-bounce" />
           <h2 className="text-2xl font-serif font-bold text-t-main uppercase tracking-widest">
             Le Tiroir-Caisse est Fermé
           </h2>
           <p className="text-t-muted text-sm max-w-md">
-            Ouvrez la caisse et enregistrez le fond de caisse du matin avant
-            d'encaisser des ventes.
+            Ouvrez la caisse et saisissez le fond de monnaie avant de réaliser
+            des ventes.
           </p>
           <Button
             variant="success"
@@ -251,16 +254,20 @@ export default function CaisseManager() {
               setStartingCash("");
               setIsOpenModalOpen(true);
             }}
-            className="py-4 px-8 mt-4 font-bold shadow-md"
+            className="py-4 px-8 mt-4 font-bold shadow-md rounded-none"
           >
             <Key size={16} className="mr-2" /> Ouvrir la Caisse
           </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* PANNEAU DE CONTRÔLE */}
+          {/* Panneau de Contrôle Live */}
           <div
-            className={`bg-surface border-t-4 p-6 flex flex-col justify-between space-y-6 shadow-sm ${currentTill.isExpired ? "border-red-500 bg-red-950/10" : "border-green-500"}`}
+            className={`bg-surface border-t-4 p-6 flex flex-col justify-between space-y-6 shadow-sm rounded-none ${
+              currentTill.isExpired
+                ? "border-red-500 bg-red-950/10"
+                : "border-green-500"
+            }`}
           >
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -268,27 +275,27 @@ export default function CaisseManager() {
                   <>
                     <AlertTriangle className="w-5 h-5 text-red-500 animate-bounce" />
                     <span className="text-xs font-bold text-red-500 uppercase tracking-widest">
-                      Alerte : Oubli de Clôture
+                      Session Précédente Non Clôturée
                     </span>
                   </>
                 ) : (
                   <>
                     <Clock className="w-4 h-4 text-green-500 animate-pulse" />
                     <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest">
-                      Caisse Ouverte
+                      Caisse Active
                     </span>
                   </>
                 )}
               </div>
               <h3
-                className={`text-xl font-serif font-bold uppercase tracking-widest ${currentTill.isExpired ? "text-red-500" : "text-t-main"}`}
+                className={`text-xl font-serif font-bold uppercase tracking-widest ${
+                  currentTill.isExpired ? "text-red-500" : "text-t-main"
+                }`}
               >
-                {currentTill.isExpired
-                  ? "Session Précédente"
-                  : "Session Actuelle"}
+                {currentTill.isExpired ? "Clôture Requise" : "Session Ouverte"}
               </h3>
               <p className="text-[10px] text-t-muted font-mono mt-1 font-bold">
-                Ouverte par {currentTill.openedBy} le{" "}
+                Par {currentTill.openedBy} le{" "}
                 {new Date(currentTill.openedAt).toLocaleDateString()} à{" "}
                 {new Date(currentTill.openedAt).toLocaleTimeString([], {
                   hour: "2-digit",
@@ -297,21 +304,23 @@ export default function CaisseManager() {
               </p>
             </div>
 
-            <div
-              className={`bg-main border p-4 space-y-4 shadow-inner ${currentTill.isExpired ? "border-red-500/50" : "border-subtle"}`}
-            >
-              <div className="flex justify-between text-[10px] uppercase text-t-muted items-center">
-                <span className="font-bold">Fond de Départ :</span>
+            <div className="bg-main border border-subtle p-4 space-y-4 shadow-inner rounded-none">
+              <div className="flex justify-between text-xs uppercase text-t-muted items-center">
+                <span className="font-bold">Fond Initial :</span>
                 <span className="font-mono font-bold text-t-main text-sm">
                   DZD {currentTill.startingCash.toFixed(2)}
                 </span>
               </div>
-              <div className="bg-[#0a0a0a] p-4 border-2 border-slate-800 flex flex-col gap-1 shadow-inner">
+              <div className="bg-[#0a0a0a] p-4 border-2 border-slate-800 flex flex-col gap-1 shadow-inner rounded-none">
                 <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-                  Solde Théorique Attendu
+                  Espèces Attendues en Tiroir
                 </span>
                 <span
-                  className={`text-3xl font-mono font-black text-right tracking-wider ${currentTill.isExpired ? "text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.4)]" : "text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)]"}`}
+                  className={`text-3xl font-mono font-black text-right tracking-wider ${
+                    currentTill.isExpired
+                      ? "text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.4)]"
+                      : "text-[#00ff00] drop-shadow-[0_0_8px_rgba(0,255,0,0.4)]"
+                  }`}
                 >
                   DZD {currentTill.expectedCash.toFixed(2)}
                 </span>
@@ -319,28 +328,15 @@ export default function CaisseManager() {
             </div>
 
             <div className="flex flex-col gap-3">
-              {currentTill.isExpired ? (
-                // ── ÉCRAN BLOQUÉ (OUBLI DE CLÔTURE) ──
-                <div className="text-center p-3 border border-red-500/30 bg-red-500/10">
-                  <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-2">
-                    Action Requise
-                  </p>
-                  <p className="text-[11px] text-slate-300 leading-tight">
-                    Cette caisse date d'une session précédente. Vous devez
-                    obligatoirement compter les espèces et la clôturer avant de
-                    démarrer une nouvelle journée.
-                  </p>
-                </div>
-              ) : (
-                // ── ÉCRAN NORMAL (CAISSE DU JOUR) ──
-                <div className="flex gap-3">
+              {!currentTill.isExpired && (
+                <div className="flex gap-2">
                   <Button
                     variant="success"
                     onClick={() => {
                       setAdjType("in");
                       setIsAdjustmentModalOpen(true);
                     }}
-                    className="flex-1 py-3 text-xs font-bold shadow-md"
+                    className="flex-1 py-3 text-xs font-bold shadow-md rounded-none"
                   >
                     <Plus size={14} className="mr-1" /> Apport (+)
                   </Button>
@@ -350,7 +346,7 @@ export default function CaisseManager() {
                       setAdjType("out");
                       setIsAdjustmentModalOpen(true);
                     }}
-                    className="flex-1 py-3 text-xs font-bold shadow-md"
+                    className="flex-1 py-3 text-xs font-bold shadow-md rounded-none"
                   >
                     <Minus size={14} className="mr-1" /> Dépense (-)
                   </Button>
@@ -360,30 +356,29 @@ export default function CaisseManager() {
               <Button
                 variant="secondary"
                 onClick={() => handleOpenAudit(currentTill)}
-                className="w-full py-3 text-xs font-bold uppercase tracking-widest bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white"
+                className="w-full py-3 text-xs font-bold uppercase tracking-widest bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white rounded-none"
               >
-                <Search size={14} className="mr-1.5" /> Auditer cette Caisse
+                <Search size={14} className="mr-1.5" /> Auditer les Mouvements
               </Button>
 
-              {/* BOUTON CLÔTURE (ROUGE SOLIDE AVEC TEXTE BLANC NET) */}
               <Button
                 variant="primary"
                 onClick={() => setIsCloseModalOpen(true)}
-                className={`w-full py-4 text-xs font-bold uppercase tracking-widest shadow-lg mt-2 ${
+                className={`w-full py-4 text-xs font-bold uppercase tracking-widest shadow-lg rounded-none ${
                   currentTill.isExpired
-                    ? "!bg-red-600 hover:!bg-red-500 !border-red-600 !text-white shadow-red-500/30 animate-pulse"
+                    ? "!bg-red-600 hover:!bg-red-500 !border-red-600 !text-white animate-pulse"
                     : "shadow-brand/20"
                 }`}
               >
                 {currentTill.isExpired
-                  ? "Clôturer la Session Précédente"
-                  : "Clôturer & Compter"}
+                  ? "Clôturer la Session d'Hier"
+                  : "Clôturer la Caisse"}
               </Button>
             </div>
           </div>
 
-          {/* HISTORIQUE DES MOUVEMENTS (LIVE) */}
-          <div className="lg:col-span-2 bg-surface border border-subtle p-6 flex flex-col shadow-sm">
+          {/* Mouvements en direct */}
+          <div className="lg:col-span-2 bg-surface border border-subtle p-6 flex flex-col shadow-sm rounded-none">
             <div className="flex justify-between items-center border-b border-subtle pb-3 mb-4">
               <h3 className="text-sm font-bold uppercase tracking-widest text-t-muted">
                 Derniers Mouvements du Tiroir
@@ -395,19 +390,19 @@ export default function CaisseManager() {
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[380px]">
               {currentTill.transactions.length === 0 ? (
-                <p className="text-center text-t-muted text-[10px] py-12 uppercase tracking-widest font-bold">
-                  Aucune transaction enregistrée.
+                <p className="text-center text-t-muted text-xs py-12 uppercase tracking-widest font-bold">
+                  Aucun mouvement enregistré aujourd'hui.
                 </p>
               ) : (
                 currentTill.transactions.map((tx) => (
                   <div
                     key={tx.id}
-                    className="flex justify-between items-center p-3 bg-main border border-subtle shadow-sm hover:border-brand/40 transition-colors"
+                    className="flex justify-between items-center p-3 bg-main border border-subtle shadow-sm hover:border-brand/40 transition-colors rounded-none"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <span
-                          className={`px-1.5 py-0.5 text-[8px] font-bold uppercase border ${
+                          className={`px-1.5 py-0.5 text-[8px] font-bold uppercase border rounded-none ${
                             tx.department === "cafe"
                               ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                               : "bg-blue-500/10 text-blue-400 border-blue-500/20"
@@ -415,7 +410,7 @@ export default function CaisseManager() {
                         >
                           {tx.department === "cafe" ? "Café" : "Salon"}
                         </span>
-                        <p className="font-bold text-t-main text-xs uppercase truncate max-w-[300px]">
+                        <p className="font-bold text-t-main text-xs uppercase truncate max-w-[320px]">
                           {tx.motif}
                         </p>
                       </div>
@@ -427,7 +422,7 @@ export default function CaisseManager() {
                       </p>
                     </div>
                     <p
-                      className={`font-mono font-bold text-xs px-3 py-1.5 border ${
+                      className={`font-mono font-bold text-xs px-3 py-1.5 border rounded-none ${
                         tx.type === "in"
                           ? "bg-green-500/10 text-green-500 border-green-500/20"
                           : "bg-red-500/10 text-red-500 border-red-500/20"
@@ -443,18 +438,19 @@ export default function CaisseManager() {
         </div>
       )}
 
-      {/* ── DEMANDES DE RETRAITS (BARBIERS) ── */}
+      {/* ── 2. DEMANDES DE RETRAITS COIFFEURS ── */}
       {pendingPayouts.length > 0 && currentTill && (
-        <div className="bg-surface border-2 border-amber-500 shadow-xl p-6 relative overflow-hidden animate-in fade-in duration-300">
-          <div className="absolute top-0 left-0 w-2 h-full bg-amber-500 animate-pulse"></div>
+        <div className="bg-surface border-2 border-amber-500 shadow-xl p-6 relative overflow-hidden rounded-none">
+          <div className="absolute top-0 left-0 w-2 h-full bg-amber-500 animate-pulse" />
 
           <div className="flex justify-between items-center mb-4 border-b border-subtle pb-3">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-widest text-amber-500 flex items-center gap-2">
-                <Banknote size={18} /> Demandes de Rémunération en Attente
+                <Banknote size={18} /> Demandes de Rémunération Coiffeurs en
+                Attente
               </h3>
-              <p className="text-[10px] text-t-muted font-bold mt-1 uppercase tracking-widest">
-                Valider déduira l'argent de la caisse.
+              <p className="text-[10px] text-t-muted font-bold mt-0.5 uppercase tracking-widest">
+                Valider déduira immédiatement l'argent du tiroir-caisse
               </p>
             </div>
           </div>
@@ -463,7 +459,7 @@ export default function CaisseManager() {
             {pendingPayouts.map((p) => (
               <div
                 key={p.id}
-                className="bg-main border border-subtle p-4 flex flex-col justify-between shadow-sm space-y-4"
+                className="bg-main border border-subtle p-4 flex flex-col justify-between shadow-sm space-y-4 rounded-none"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -478,7 +474,7 @@ export default function CaisseManager() {
                       })}
                     </p>
                   </div>
-                  <span className="text-lg font-mono font-black text-amber-500">
+                  <span className="text-lg font-mono font-black text-amber-400">
                     DZD {p.amount.toFixed(2)}
                   </span>
                 </div>
@@ -486,16 +482,16 @@ export default function CaisseManager() {
                   <Button
                     variant="danger"
                     onClick={() => handleRejectPayout(p)}
-                    className="py-2.5 px-3 text-[10px] flex-1"
+                    className="py-2.5 px-3 text-[10px] flex-1 rounded-none"
                   >
                     <X size={14} className="mr-1" /> Rejeter
                   </Button>
                   <Button
                     variant="success"
                     onClick={() => handleApprovePayout(p)}
-                    className="py-2.5 px-4 text-[10px] font-bold flex-1 shadow-md"
+                    className="py-2.5 px-4 text-[10px] font-bold flex-1 shadow-md rounded-none"
                   >
-                    <Check size={14} className="mr-1" /> Payer (Tiroir)
+                    <Check size={14} className="mr-1" /> Donner l'argent
                   </Button>
                 </div>
               </div>
@@ -504,19 +500,27 @@ export default function CaisseManager() {
         </div>
       )}
 
-      {/* 2. HISTORIQUE DES ANCIENNES FERMETURES */}
-      <div className="bg-surface border border-subtle shadow-sm">
-        <div className="p-5 border-b border-subtle">
-          <h3 className="text-lg font-serif font-bold text-brand uppercase tracking-widest">
-            Historique des Clôtures
+      {/* ══════════════════════════════════════════════════════════════
+          3. TABLEAU DES ANCIENNES CLÔTURES (AVEC COLONNES SÉPARÉES !)
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="bg-surface border border-subtle shadow-sm rounded-none overflow-hidden">
+        <div className="p-5 border-b border-subtle bg-main/40">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-brand flex items-center gap-2">
+            <Calendar size={18} /> Historique des Clôtures de Caisse
           </h3>
+          <p className="text-[10px] text-t-muted uppercase font-bold mt-0.5">
+            Registre officiel des comptages et écarts de caisse constatés
+          </p>
         </div>
+
         <DataTable
           headers={[
-            { label: "Clôturé le" },
+            { label: "Date" },
+            { label: "Heure" },
+            { label: "Clôturé par" },
             { label: "Fond Départ" },
             { label: "Théorique" },
-            { label: "Réel Compté" },
+            { label: "Compté Réel" },
             { label: "Écart de Caisse", align: "right" },
             { label: "Audit", align: "right" },
           ]}
@@ -524,60 +528,80 @@ export default function CaisseManager() {
           {history.length === 0 ? (
             <tr>
               <td
-                colSpan="6"
+                colSpan="8"
                 className="text-center py-12 text-t-muted text-xs font-bold uppercase tracking-widest"
               >
-                Aucun historique de clôture.
+                Aucun historique de clôture disponible.
               </td>
             </tr>
           ) : (
             history.map((h) => (
               <tr
                 key={h.id}
-                className="border-b border-subtle hover:bg-brand/5"
+                className="border-b border-subtle hover:bg-brand/5 transition-colors"
               >
-                <td className="px-6 py-4 text-[10px] font-mono text-t-muted">
-                  {new Date(h.closedAt).toLocaleDateString("fr-FR")} à{" "}
+                {/* 1. DATE SÉPARÉE */}
+                <td className="px-5 py-3 font-mono font-bold text-xs text-t-main whitespace-nowrap">
+                  {new Date(h.closedAt).toLocaleDateString("fr-FR")}
+                </td>
+
+                {/* 2. HEURE SÉPARÉE */}
+                <td className="px-5 py-3 font-mono text-xs text-t-muted whitespace-nowrap">
                   {new Date(h.closedAt).toLocaleTimeString("fr-FR", {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
-                  <span className="block mt-1 font-bold">
-                    Par: {h.closedBy}
+                </td>
+
+                {/* 3. CLÔTURÉ PAR (RESPONSABLE) SÉPARÉ */}
+                <td className="px-5 py-3 text-xs font-bold text-brand uppercase whitespace-nowrap">
+                  <span className="flex items-center gap-1.5">
+                    <User size={13} className="text-brand/60" />{" "}
+                    {h.closedBy || "Système"}
                   </span>
                 </td>
-                <td className="px-6 py-4 font-mono text-t-main text-xs">
+
+                {/* 4. FOND DÉPART */}
+                <td className="px-5 py-3 font-mono text-xs text-t-muted">
                   DZD {h.startingCash.toFixed(2)}
                 </td>
-                <td className="px-6 py-4 font-mono text-t-main text-xs">
+
+                {/* 5. THÉORIQUE ATTENDU */}
+                <td className="px-5 py-3 font-mono text-xs text-slate-300">
                   DZD {h.expectedCash.toFixed(2)}
                 </td>
-                <td className="px-6 py-4 font-mono font-bold text-t-main text-sm">
-                  DZD {h.reportedCash.toFixed(2)}
+
+                {/* 6. COMPTÉ RÉEL EN TIROIR */}
+                <td className="px-5 py-3 font-mono font-bold text-xs text-green-400">
+                  DZD {(h.reportedCash || 0).toFixed(2)}
                 </td>
-                <td className="px-6 py-4 text-right">
+
+                {/* 7. ÉCART DE CAISSE */}
+                <td className="px-5 py-3 text-right">
                   {h.difference === 0 ? (
-                    <span className="inline-block px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 font-bold text-[10px] uppercase shadow-sm">
-                      Parfaite
+                    <span className="inline-block px-2.5 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 font-bold text-[9px] uppercase rounded-none">
+                      0.00 (Parfait)
                     </span>
                   ) : h.difference < 0 ? (
-                    <span className="inline-block px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 font-mono font-bold text-[10px] shadow-sm">
-                      Déficit: -DZD {Math.abs(h.difference).toFixed(2)}
+                    <span className="inline-block px-2.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 font-mono font-bold text-[9px] rounded-none">
+                      Déficit : {h.difference.toFixed(2)} DA
                     </span>
                   ) : (
-                    <span className="inline-block px-3 py-1 bg-amber-500/10 text-amber-500 border border-amber-500/20 font-mono font-bold text-[10px] shadow-sm">
-                      Excédent: +DZD {h.difference.toFixed(2)}
+                    <span className="inline-block px-2.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono font-bold text-[9px] rounded-none">
+                      Excédent : +{h.difference.toFixed(2)} DA
                     </span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-right">
+
+                {/* 8. AUDIT DÉTAILLÉ */}
+                <td className="px-5 py-3 text-right">
                   <Button
                     variant="secondary"
                     onClick={() => handleOpenAudit(h)}
-                    className="py-2 px-3 text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white transition-colors"
-                    title="Voir toutes les transactions"
+                    className="py-1 px-3 text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500 hover:text-white rounded-none"
+                    title="Voir les mouvements de cette session"
                   >
-                    <Eye size={14} className="mr-1.5" /> Voir Détails
+                    <Eye size={13} className="mr-1" /> Voir
                   </Button>
                 </td>
               </tr>
@@ -586,66 +610,67 @@ export default function CaisseManager() {
         </DataTable>
       </div>
 
-      {/* ── MODALE : AUDIT DE CAISSE (Ancienne ou Actuelle) ── */}
+      {/* ── MODALE : AUDIT DE SESSION ── */}
       <Modal
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
       >
         {tillToAudit && (
-          <div className="flex flex-col bg-slate-950 max-h-[90vh]">
-            <div className="px-6 py-5 border-b-4 border-slate-800 shrink-0 bg-slate-900">
+          <div className="flex flex-col bg-slate-950 max-h-[90vh] rounded-none">
+            <div className="px-6 py-5 border-b border-slate-800 bg-slate-900 shrink-0">
               <h3 className="text-lg font-serif font-bold text-t-main uppercase tracking-widest flex items-center gap-2">
-                <Search size={20} className="text-brand" />
+                <Search size={18} className="text-brand" />
                 {tillToAudit.status === "open"
                   ? "Audit de la Caisse en Cours"
-                  : "Audit de la Clôture"}
+                  : "Détails de la Session Clôturée"}
               </h3>
-              <p className="text-[10px] text-t-muted font-mono mt-1.5 font-bold uppercase tracking-widest">
+              <p className="text-[10px] text-t-muted font-mono mt-1 font-bold uppercase">
                 Ouverte le{" "}
-                {new Date(tillToAudit.openedAt).toLocaleString("fr-FR")}
+                {new Date(tillToAudit.openedAt).toLocaleString("fr-FR")} par{" "}
+                {tillToAudit.openedBy}
                 {tillToAudit.closedAt &&
-                  ` • Clôturée le ${new Date(tillToAudit.closedAt).toLocaleString("fr-FR")}`}
+                  ` • Clôturée le ${new Date(tillToAudit.closedAt).toLocaleString("fr-FR")} par ${tillToAudit.closedBy}`}
               </p>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="bg-main border border-subtle p-4 shadow-inner grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="bg-main border border-subtle p-4 grid grid-cols-2 lg:grid-cols-4 gap-4 font-mono text-xs">
                 <div>
                   <span className="text-[9px] uppercase font-bold text-t-muted">
-                    Fond Départ
+                    Fond Initial
                   </span>
-                  <p className="text-sm font-mono font-bold text-t-main">
+                  <p className="font-bold text-slate-200 mt-0.5">
                     DZD {tillToAudit.startingCash.toFixed(2)}
                   </p>
                 </div>
                 <div>
                   <span className="text-[9px] uppercase font-bold text-t-muted">
-                    Théorique Actuel
+                    Attendu
                   </span>
-                  <p className="text-sm font-mono font-bold text-brand">
+                  <p className="font-bold text-amber-400 mt-0.5">
                     DZD {tillToAudit.expectedCash.toFixed(2)}
                   </p>
                 </div>
                 {tillToAudit.status === "closed" && (
                   <>
-                    <div className="border-l border-subtle pl-4">
+                    <div>
                       <span className="text-[9px] uppercase font-bold text-t-muted">
-                        Compté par caissier
+                        Compté Réel
                       </span>
-                      <p className="text-base font-mono font-bold text-t-main">
-                        DZD {tillToAudit.reportedCash?.toFixed(2)}
+                      <p className="font-bold text-green-400 mt-0.5">
+                        DZD {(tillToAudit.reportedCash || 0).toFixed(2)}
                       </p>
                     </div>
                     <div>
                       <span className="text-[9px] uppercase font-bold text-t-muted">
-                        Écart Constaté
+                        Écart
                       </span>
                       <p
-                        className={`text-base font-mono font-bold ${tillToAudit.difference === 0 ? "text-green-500" : tillToAudit.difference < 0 ? "text-red-500" : "text-amber-500"}`}
+                        className={`font-bold mt-0.5 ${tillToAudit.difference === 0 ? "text-green-500" : tillToAudit.difference < 0 ? "text-red-500" : "text-amber-500"}`}
                       >
                         {tillToAudit.difference === 0
-                          ? "Parfait (0.00)"
-                          : `${tillToAudit.difference > 0 ? "+" : ""}${tillToAudit.difference.toFixed(2)}`}
+                          ? "0.00 DA"
+                          : `${tillToAudit.difference > 0 ? "+" : ""}${tillToAudit.difference.toFixed(2)} DA`}
                       </p>
                     </div>
                   </>
@@ -653,40 +678,32 @@ export default function CaisseManager() {
               </div>
 
               <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-t-muted border-b border-subtle pb-2 mb-3">
-                  Registre des {tillToAudit.transactions.length} Mouvements
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-t-muted border-b border-subtle pb-2 mb-2">
+                  Mouvements Enregistrés (
+                  {tillToAudit.transactions?.length || 0})
                 </h4>
-                <div className="space-y-2">
-                  {tillToAudit.transactions.length === 0 ? (
-                    <p className="text-center text-t-muted text-[10px] py-6 uppercase font-bold tracking-widest bg-main border border-dashed border-subtle">
-                      Aucun mouvement.
-                    </p>
-                  ) : (
-                    tillToAudit.transactions.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="flex justify-between items-center p-3 bg-main border border-subtle shadow-sm hover:border-brand/50 transition-colors"
-                      >
-                        <div>
-                          <p className="font-bold text-t-main text-xs uppercase max-w-[250px] sm:max-w-[400px] truncate leading-tight">
-                            {tx.motif}
-                          </p>
-                          <p className="text-[9px] text-t-muted font-mono mt-1 font-bold">
-                            {new Date(tx.createdAt).toLocaleTimeString("fr-FR")}
-                          </p>
-                        </div>
-                        <p
-                          className={`font-mono font-bold text-xs px-2.5 py-1.5 border ${
-                            tx.type === "in"
-                              ? "bg-green-500/10 text-green-500 border-green-500/20"
-                              : "bg-red-500/10 text-red-500 border-red-500/20"
-                          }`}
-                        >
-                          {tx.type === "in" ? "+" : "-"} {tx.amount.toFixed(2)}
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+                  {tillToAudit.transactions?.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex justify-between items-center p-2.5 bg-main border border-subtle text-xs"
+                    >
+                      <div>
+                        <p className="font-bold text-t-main uppercase truncate max-w-[320px]">
+                          {tx.motif}
+                        </p>
+                        <p className="text-[9px] text-t-muted font-mono">
+                          {new Date(tx.createdAt).toLocaleTimeString("fr-FR")}
                         </p>
                       </div>
-                    ))
-                  )}
+                      <p
+                        className={`font-mono font-bold ${tx.type === "in" ? "text-green-400" : "text-red-400"}`}
+                      >
+                        {tx.type === "in" ? "+" : "-"} DZD{" "}
+                        {tx.amount.toFixed(2)}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -696,111 +713,164 @@ export default function CaisseManager() {
                 variant="outline"
                 fullWidth
                 onClick={() => setIsAuditModalOpen(false)}
-                className="py-3 font-bold uppercase tracking-widest text-xs"
+                className="py-3 font-bold uppercase tracking-widest text-xs rounded-none"
               >
-                Fermer l'Audit
+                Fermer
               </Button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* MODALES D'ACTIONS (Ouverture, Ajustement, Clôture) GARDÉES À L'IDENTIQUE */}
-      {/* ... */}
-
-      {/* --- MODAL 1 : OUVERTURE DE CAISSE --- */}
+      {/* ── MODALE OUVERTURE DE CAISSE ── */}
       <Modal isOpen={isOpenModalOpen} onClose={() => setIsOpenModalOpen(false)}>
-        <form onSubmit={handleOpenTill} className="p-8 bg-surface">
-          <h3 className="text-xl font-serif font-bold text-brand mb-6 uppercase tracking-wider text-center border-b border-subtle pb-4">
-            Démarrage de la Caisse
+        <form onSubmit={handleOpenTill} className="p-8 bg-surface rounded-none">
+          <h3 className="text-lg font-serif font-bold text-brand mb-6 uppercase tracking-wider text-center border-b border-subtle pb-4">
+            Ouverture du Tiroir-Caisse
           </h3>
-          <div className="space-y-6">
+          <div className="space-y-5">
             <Input
-              label="Fond de Caisse de Départ (DZD)"
+              label="Fond de Monnaie de Départ (DZD) *"
               type="number"
-              step="0.01"
+              step="500"
               value={startingCash}
               onChange={(e) => setStartingCash(e.target.value)}
               required
-              placeholder="Entrez le montant de monnaie dans le tiroir"
+              placeholder="Ex: 5000"
               autoFocus
             />
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-subtle">
+
+            {/* SÉLECTEUR DE PROVENANCE DU FOND */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
+                Provenance du Fond (Qui a mis la monnaie ?) *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStartingCashProvider("commune")}
+                  className={`p-3 text-[10px] font-bold uppercase border rounded-none flex flex-col items-center justify-center gap-1 transition-all ${
+                    startingCashProvider === "commune"
+                      ? "bg-brand text-white border-brand shadow-md"
+                      : "bg-main text-t-muted border-subtle hover:text-t-main"
+                  }`}
+                >
+                  <span>🤝 Commune</span>
+                  <span className="text-[8px] opacity-75 font-normal">
+                    Permanent (Neutre)
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStartingCashProvider("coiffure")}
+                  className={`p-3 text-[10px] font-bold uppercase border rounded-none flex flex-col items-center justify-center gap-1 transition-all ${
+                    startingCashProvider === "coiffure"
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md"
+                      : "bg-main text-t-muted border-subtle hover:text-blue-400"
+                  }`}
+                >
+                  <span>💈 Salon</span>
+                  <span className="text-[8px] opacity-75 font-normal">
+                    Avance Salon
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStartingCashProvider("cafe")}
+                  className={`p-3 text-[10px] font-bold uppercase border rounded-none flex flex-col items-center justify-center gap-1 transition-all ${
+                    startingCashProvider === "cafe"
+                      ? "bg-amber-500 text-white border-amber-500 shadow-md"
+                      : "bg-main text-t-muted border-subtle hover:text-amber-400"
+                  }`}
+                >
+                  <span>☕ Cafétéria</span>
+                  <span className="text-[8px] opacity-75 font-normal">
+                    Avance Café
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-subtle">
               <Button
                 variant="outline"
                 type="button"
                 onClick={() => setIsOpenModalOpen(false)}
-                className="font-bold py-4 text-xs"
+                className="font-bold py-3 text-xs rounded-none"
               >
                 Annuler
               </Button>
               <Button
                 variant="success"
                 type="submit"
-                className="font-bold py-4 text-xs shadow-md"
+                className="font-bold py-3 text-xs shadow-md rounded-none"
               >
-                Valider & Ouvrir
+                Valider &amp; Ouvrir
               </Button>
             </div>
           </div>
         </form>
       </Modal>
 
-      {/* --- MODAL 2 : AJUSTEMENT DE CAISSE --- */}
+      {/* ── MODALE APPORT / DÉPENSE ── */}
       <Modal
         isOpen={isAdjModalOpen}
         onClose={() => setIsAdjustmentModalOpen(false)}
       >
-        <form onSubmit={handleAddTransaction} className="p-8 bg-surface">
-          <h3 className="text-xl font-serif font-bold text-brand mb-6 uppercase tracking-wider text-center border-b border-subtle pb-4">
+        <form
+          onSubmit={handleAddTransaction}
+          className="p-8 bg-surface rounded-none"
+        >
+          <h3 className="text-lg font-serif font-bold text-brand mb-6 uppercase tracking-wider text-center border-b border-subtle pb-4">
             {adjType === "in"
-              ? "Enregistrer un Apport d'espèces"
-              : "Enregistrer une Sortie de Caisse"}
+              ? "Enregistrer un Apport d'Espèces (+)"
+              : "Enregistrer une Sortie de Caisse (-)"}
           </h3>
 
           <div className="space-y-4">
-            {/* ── NOUVEAU SÉLECTEUR DE PÔLE (ANTER VS CHÉRIF) ── */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-t-muted mb-2">
-                Pôle concerné (Pour qui est cette opération ?) *
+                Pôle Concerné *
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setAdjDepartment("coiffure")}
-                  className={`py-3 px-2 text-xs font-bold uppercase tracking-wider transition-all border rounded-none ${
+                  className={`py-3 text-xs font-bold uppercase border rounded-none ${
                     adjDepartment === "coiffure"
-                      ? "bg-blue-600 text-white border-blue-600 shadow-md"
-                      : "bg-main text-t-muted border-subtle hover:text-t-main"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-main text-t-muted border-subtle"
                   }`}
                 >
-                  💈 Pôle Salon
+                  💈 Salon de Coiffure
                 </button>
                 <button
                   type="button"
                   onClick={() => setAdjDepartment("cafe")}
-                  className={`py-3 px-2 text-xs font-bold uppercase tracking-wider transition-all border rounded-none ${
+                  className={`py-3 text-xs font-bold uppercase border rounded-none ${
                     adjDepartment === "cafe"
-                      ? "bg-amber-500 text-white border-amber-500 shadow-md"
-                      : "bg-main text-t-muted hover:text-t-main"
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : "bg-main text-t-muted border-subtle"
                   }`}
                 >
-                  ☕ Pôle Cafétéria
+                  ☕ Espace Cafétéria
                 </button>
               </div>
             </div>
-            {/* ────────────────────────────────────────────────── */}
 
             <Input
-              label="Montant d'espèces (DZD) *"
+              label="Montant (DZD) *"
               type="number"
-              step="0.01"
+              step="50"
               value={adjAmount}
               onChange={(e) => setAdjAmount(e.target.value)}
               required
               placeholder="0.00"
               autoFocus
             />
+
             <Input
               label="Motif / Justification *"
               type="text"
@@ -809,91 +879,93 @@ export default function CaisseManager() {
               required
               placeholder={
                 adjType === "in"
-                  ? "ex: Ajout monnaie de 200 DA"
-                  : "ex: Achat Lait / Lames de rasoir"
+                  ? "Ex: Rajout monnaie de 200 DA"
+                  : "Ex: Achat Lait, Sonelgaz, Réparation"
               }
             />
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-subtle">
+
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-subtle">
               <Button
                 variant="outline"
                 type="button"
                 onClick={() => setIsAdjustmentModalOpen(false)}
-                className="font-bold py-4 text-xs"
+                className="font-bold py-3 text-xs rounded-none"
               >
                 Annuler
               </Button>
               <Button
                 variant={adjType === "in" ? "success" : "danger"}
                 type="submit"
-                className="font-bold py-4 text-xs shadow-md"
+                className="font-bold py-3 text-xs shadow-md rounded-none"
               >
-                Confirmer l'opération
+                Confirmer
               </Button>
             </div>
           </div>
         </form>
       </Modal>
 
-      {/* --- MODAL 3 : CLÔTURE DE CAISSE (LE SOIR) --- */}
+      {/* ── MODALE CLÔTURE ── */}
       <Modal
         isOpen={isCloseModalOpen}
         onClose={() => setIsCloseModalOpen(false)}
       >
         <form
           onSubmit={handleCheckBeforeClose}
-          className="p-8 bg-surface border-t-4 border-red-500"
+          className="p-8 bg-surface border-t-4 border-red-500 rounded-none"
         >
-          <h3 className="text-xl font-serif font-bold text-red-500 mb-2 uppercase tracking-wider text-center">
-            Clôture de Caisse Finale
+          <h3 className="text-lg font-serif font-bold text-red-500 mb-2 uppercase tracking-wider text-center">
+            Clôture de Caisse (Comptage Réel)
           </h3>
           <p className="text-[10px] text-t-muted font-bold uppercase tracking-widest text-center border-b border-subtle pb-4 mb-6">
-            Clôture de session à l'aveugle
+            Comptez les billets et pièces dans le tiroir
           </p>
+
           <div className="space-y-6">
             <Input
-              label="Montant des espèces réelles comptées (DZD)"
+              label="Espèces Réellement Comptées dans le Tiroir (DZD) *"
               type="number"
-              step="0.01"
+              step="50"
               value={reportedCash}
               onChange={(e) => setReportedCash(e.target.value)}
               required
-              placeholder="Comptez le tiroir-caisse et saisissez le montant"
+              placeholder="Saisissez le total physique compté"
               autoFocus
             />
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-subtle">
+
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-subtle">
               <Button
                 variant="outline"
                 type="button"
                 onClick={() => setIsCloseModalOpen(false)}
-                className="font-bold py-4 text-xs"
+                className="font-bold py-3 text-xs rounded-none"
               >
-                Retour
+                Annuler
               </Button>
               <Button
                 variant="danger"
                 type="submit"
-                className="bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-none shadow-lg shadow-red-500/20 text-xs"
+                className="bg-red-600 hover:bg-red-500 text-white font-bold py-3 text-xs rounded-none shadow-md"
               >
-                Valider la Clôture
+                Valider &amp; Clôturer
               </Button>
             </div>
           </div>
         </form>
       </Modal>
 
-      {/* MODAL 4 : CONFIRMATION ÉCART */}
+      {/* Confirmation Écart */}
       <ConfirmModal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
         onConfirm={() => executeCloseTill(parseFloat(reportedCash))}
-        title="ÉCART ANORMAL DÉTECTÉ"
+        title="ÉCART DE CAISSE DÉTECTÉ"
         message={confirmMessage}
-        confirmText="Forcer la Clôture"
-        cancelText="Corriger la saisie"
+        confirmText="Confirmer la Clôture"
+        cancelText="Recompter"
         isDanger={true}
       />
 
-      {/* Impression Z-Report */}
       <ThermalReceipt
         type="z-report"
         data={printData}

@@ -152,6 +152,23 @@ export default function BarbersManager() {
       }
     }
   };
+  // ── BASCULER LA PRÉSENCE DU COIFFEUR (PRÉSENT / ABSENT) ──
+  const handleTogglePresence = async (barberId) => {
+    try {
+      const res = await api.patch(`/barbers/${barberId}/presence`);
+      toast.success(res.data.message);
+      // Mise à jour immédiate à l'écran
+      setBarbers((prev) =>
+        prev.map((b) =>
+          b.id === barberId
+            ? { ...b, isPresent: b.isPresent === false ? true : false }
+            : b,
+        ),
+      );
+    } catch (err) {
+      toast.error("Impossible de modifier la présence.");
+    }
+  };
 
   // Calcul global pour le patron (N'inclut pas le solde du patron lui-même)
   const totalDueToBarbers = barbers.reduce(
@@ -294,6 +311,29 @@ export default function BarbersManager() {
                     </div>
                   )}
                 </div>
+              </div>
+              <div className="px-4 pb-3">
+                <button
+                  type="button"
+                  onClick={() => handleTogglePresence(barber.id)}
+                  className={`w-full py-2.5 px-3 text-[10px] font-bold uppercase tracking-wider border rounded-none transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
+                    barber.isPresent !== false
+                      ? "bg-green-600/10 text-green-400 border-green-500/30 hover:bg-green-600 hover:text-white"
+                      : "bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200"
+                  }`}
+                  title="Cliquer pour changer le statut aujourd'hui"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      barber.isPresent !== false
+                        ? "bg-green-500 animate-pulse"
+                        : "bg-slate-500"
+                    }`}
+                  />
+                  {barber.isPresent !== false
+                    ? "Présent (En Service)"
+                    : "Absent (En Repos)"}
+                </button>
               </div>
 
               {/* Actions */}
